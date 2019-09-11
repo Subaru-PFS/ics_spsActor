@@ -15,9 +15,9 @@ class expose(QThread):
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
-    def expose(self, cmd, exptype, exptime, cams):
+    def expose(self, cmd, exptype, exptime, cams, visit):
         cams = cams if cams else self.actor.cams
-        visit = self.actor.getSeqno(cmd=cmd)
+        visit = self.actor.getSeqno(cmd=cmd) if visit is None else visit
         exposure = Exposure(actor=self.actor,
                             cams=cams,
                             visit=visit,
@@ -41,9 +41,9 @@ class expose(QThread):
         visit = exposure.store()
         return visit
 
-    def calibExposure(self, cmd, cams, exptype, exptime):
+    def calibExposure(self, cmd, cams, exptype, exptime, visit):
         cams = cams if cams else self.actor.cams
-        visit = self.actor.getSeqno(cmd=cmd)
+        visit = self.actor.getSeqno(cmd=cmd) if visit is None else visit
         exposure = Exposure(actor=self.actor,
                             cams=cams,
                             visit=visit,
