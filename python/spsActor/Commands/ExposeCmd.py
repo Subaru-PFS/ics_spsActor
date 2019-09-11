@@ -17,9 +17,9 @@ class ExposeCmd(object):
         #
         self.name = "expose"
         self.vocab = [
-            ('expose', '[@(object|arc|flat)] <exptime> [<cam>] [<cams>]', self.doExposure),
-            ('expose', 'bias [<cam>] [<cams>]', self.doBias),
-            ('expose', 'dark <exptime> [<cam>] [<cams>]', self.doDark),
+            ('expose', '[@(object|arc|flat)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
+            ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doBias),
+            ('expose', 'dark <exptime> [<visit>] [<cam>] [<cams>]', self.doDark),
 
         ]
 
@@ -30,6 +30,8 @@ class ExposeCmd(object):
                                                  help='single camera to take exposure from'),
                                         keys.Key("cams", types.String() * (1,),
                                                  help='list of camera to take exposure from'),
+                                        keys.Key("visit", types.Int(),
+                                                 help='PFS visit id'),
                                         )
 
     @property
@@ -51,6 +53,7 @@ class ExposeCmd(object):
         exptype = 'flat' if 'flat' in cmdKeys else exptype
 
         exptime = cmdKeys['exptime'].values[0]
+        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
         cams = False
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
@@ -58,13 +61,15 @@ class ExposeCmd(object):
         visit = self.controller.expose(cmd=cmd,
                                        exptype=exptype,
                                        exptime=exptime,
-                                       cams=cams)
+                                       cams=cams,
+                                       visit=visit)
 
         cmd.finish('visit=%i' % visit)
 
     @threaded
     def doBias(self, cmd):
         cmdKeys = cmd.cmd.keywords
+        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
         cams = False
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
@@ -72,7 +77,8 @@ class ExposeCmd(object):
         visit = self.controller.calibExposure(cmd=cmd,
                                               cams=cams,
                                               exptype='bias',
-                                              exptime=0)
+                                              exptime=0,
+                                              visit=visit)
 
         cmd.finish('visit=%i' % visit)
 
@@ -80,6 +86,7 @@ class ExposeCmd(object):
     def doDark(self, cmd):
         cmdKeys = cmd.cmd.keywords
         exptime = cmdKeys['exptime'].values[0]
+        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
         cams = False
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
@@ -87,6 +94,7 @@ class ExposeCmd(object):
         visit = self.controller.calibExposure(cmd=cmd,
                                               cams=cams,
                                               exptype='dark',
-                                              exptime=exptime)
+                                              exptime=exptime,
+                                              visit=visit)
 
         cmd.finish('visit=%i' % visit)
