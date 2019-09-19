@@ -12,7 +12,7 @@ class SpsActor(actorcore.ICC.ICC):
         #
         self.name = name
 
-        specIds = [i + 1 for i in range(4)]
+        specIds = [i + 1 for i in range(1)]
         allcams = ['b%i' % i for i in specIds] + ['r%i' % i for i in specIds]
 
         self.ccds = ['ccd_%s' % cam for cam in allcams]
@@ -27,24 +27,23 @@ class SpsActor(actorcore.ICC.ICC):
                                    modelNames=['seqno'] + self.ccds + self.enus)
 
         self.logger.setLevel(logLevel)
-
         self.everConnected = False
-
-        self.doStop = False
 
     @property
     def cams(self):
         return self.config.get('sps', 'cams').split(',')
 
-    def safeCall(self, doRaise=True, doRetry=False, **kwargs):
+    def safeCall(self, **kwargs):
         cmd = kwargs["forUserCmd"]
         kwargs["timeLim"] = 300 if "timeLim" not in kwargs.keys() else kwargs["timeLim"]
 
         cmdVar = self.cmdr.call(**kwargs)
 
-        if cmdVar.didFail and doRaise:
+        if cmdVar.didFail:
             reply = cmdVar.replyList[-1]
-            raise RuntimeError("actor=%s %s" % (reply.header.actor, reply.keywords.canonical(delimiter=';')))
+            repStr = reply.keywords.canonical(delimiter=';')
+            cmd.warn(repStr.replace('command failed', f'{kwargs["actor"]} {kwargs["cmdStr"].split(" ", 1)[0]} failed'))
+
         return cmdVar
 
     def getSeqno(self, cmd):

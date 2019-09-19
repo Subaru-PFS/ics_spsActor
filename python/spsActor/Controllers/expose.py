@@ -1,74 +1,60 @@
 import logging
-import time
 
-from actorcore.QThread import QThread
-from spsActor.utils import Exposure
+from spsActor.Controllers.exposure import Exposure
+from spsActor.utils import wait
 
-class expose(QThread):
+
+class expose(object):
     def __init__(self, actor, name, loglevel=logging.DEBUG):
         """This sets up the connections to/from the hub, the logger, and the twisted reactor.
 
         :param actor: spsaitActor
         :param name: controller name
         """
-        QThread.__init__(self, actor, name, timeout=2)
+        self.actor = actor
+        self.name = name
+        self.doStop = False
+
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
 
-    def expose(self, cmd, exptype, exptime, cams, visit):
-        cams = cams if cams else self.actor.cams
-        visit = self.actor.getSeqno(cmd=cmd) if visit is None else visit
-        exposure = Exposure(actor=self.actor,
-                            cams=cams,
-                            visit=visit,
-                            exptype=exptype,
-                            exptime=exptime,
-                            cmd=cmd)
+    def resetExposure(self):
+        """ reset exposure stop flag """
 
-        exposure.wipeCcd(cmd=cmd)
-        exposure.waitAndHandle(state='integrating', timeout=90)
+        self.doStop = False
 
-        exposure.cmdShutters(cmd=cmd, exptime=exptime)
+    def stopExposure(self, cmd):
+        """ activate exposure stop flag, call enu exposure abort function"""
+        self.doStop = True
 
-        exposure.waitAndHandle(state='reading', timeout=60 + exptime)
-        exposure.waitAndHandle(state='idle', timeout=180, force=True)
+        for enu in self.actor.enus:
+            self.actor.safeCall(actor=enu, cmdStr='exposure abort', forUserCmd=cmd, timeLim=10)
 
-        start = time.time()
-        while not exposure.filesExist():
-            if time.time() - start > exposure.timeout:
-                raise Exception('no exposure has been created')
+    def expose(self, cmd, exptype, exptime, visit, cams):
+        """ create Exposure object wait for threaded jobs to be finished
 
-        visit = exposure.store()
-        return visit
-
-    def calibExposure(self, cmd, cams, exptype, exptime, visit):
-        cams = cams if cams else self.actor.cams
-        visit = self.actor.getSeqno(cmd=cmd) if visit is None else visit
-        exposure = Exposure(actor=self.actor,
-                            cams=cams,
-                            visit=visit,
-                            exptype=exptype,
-                            exptime=exptime,
-                            cmd=cmd)
-
-        exposure.wipeCcd(cmd=cmd)
-        exposure.readCcd(cmd=cmd, exptime=exptime)
-
-        exposure.waitAndHandle(state='reading', timeout=60 + exptime)
-        exposure.waitAndHandle(state='idle', timeout=180, force=True)
-
-        start = time.time()
-        while not exposure.filesExist():
-            if time.time() - start > exposure.timeout:
-                raise Exception('no exposure has been created')
-
-        visit = exposure.store()
-        return visit
-
-    def start(self, cmd=None):
-        QThread.start(self)
-
-    def handleTimeout(self):
-        """| Is called when the thread is idle
+        raise RuntimeError if not a single CamExposure file has been created
+        finally: free up all ressources
         """
+        exp = Exposure(self.actor, exptype, exptime, cams)
+
+        try:
+            exp.start(cmd, visit)
+
+            while exp.notFinished:
+                wait()
+
+            if not exp.isIdle:
+                msg = 'Exposure aborted' if self.doStop else 'Exposure has failed'
+                raise RuntimeError(msg)
+
+            exp.store(visit)
+
+        finally:
+            exp.exit()
+
+    def start(self, *args, **kwargs):
+        pass
+
+    def stop(self, *args, **kwargs):
         pass
