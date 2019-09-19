@@ -3,7 +3,7 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from spsaitActor.utils import threaded
+from spsActor.utils import singleShot
 
 
 class ExposeCmd(object):
@@ -17,10 +17,9 @@ class ExposeCmd(object):
         #
         self.name = "expose"
         self.vocab = [
-            ('expose', '[@(object|arc|flat)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
-            ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doBias),
-            ('expose', 'dark <exptime> [<visit>] [<cam>] [<cams>]', self.doDark),
-
+            ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
+            ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
+            ('exposure', 'abort', self.doStop)
         ]
 
         # Define typed command arguments for the above commands.
@@ -41,60 +40,32 @@ class ExposeCmd(object):
         except KeyError:
             raise RuntimeError('%s controller is not connected.' % self.name)
 
-    @property
-    def doStop(self):
-        return self.actor.doStop
-
-    @threaded
+    @singleShot
     def doExposure(self, cmd):
+        self.controller.resetExposure()
         cmdKeys = cmd.cmd.keywords
+
         exptype = 'object'
         exptype = 'arc' if 'arc' in cmdKeys else exptype
         exptype = 'flat' if 'flat' in cmdKeys else exptype
+        exptype = 'bias' if 'bias' in cmdKeys else exptype
+        exptype = 'dark' if 'dark' in cmdKeys else exptype
 
-        exptime = cmdKeys['exptime'].values[0]
-        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
-        cams = False
+        exptime = cmdKeys['exptime'].values[0] if exptype is not 'bias' else 0
+        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getSeqno(cmd=cmd)
+
+        cams = self.actor.cams
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
 
-        visit = self.controller.expose(cmd=cmd,
-                                       exptype=exptype,
-                                       exptime=exptime,
-                                       cams=cams,
-                                       visit=visit)
+        self.controller.expose(cmd=cmd,
+                               exptype=exptype,
+                               exptime=exptime,
+                               visit=visit,
+                               cams=cams)
 
-        cmd.finish('visit=%i' % visit)
+        cmd.finish('visit=%d' % visit)
 
-    @threaded
-    def doBias(self, cmd):
-        cmdKeys = cmd.cmd.keywords
-        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
-        cams = False
-        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
-
-        visit = self.controller.calibExposure(cmd=cmd,
-                                              cams=cams,
-                                              exptype='bias',
-                                              exptime=0,
-                                              visit=visit)
-
-        cmd.finish('visit=%i' % visit)
-
-    @threaded
-    def doDark(self, cmd):
-        cmdKeys = cmd.cmd.keywords
-        exptime = cmdKeys['exptime'].values[0]
-        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else None
-        cams = False
-        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
-
-        visit = self.controller.calibExposure(cmd=cmd,
-                                              cams=cams,
-                                              exptype='dark',
-                                              exptime=exptime,
-                                              visit=visit)
-
-        cmd.finish('visit=%i' % visit)
+    def doStop(self, cmd):
+        self.controller.stopExposure(cmd)
+        cmd.finish('text="exposure stopped"')
