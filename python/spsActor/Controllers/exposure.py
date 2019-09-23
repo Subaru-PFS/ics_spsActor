@@ -28,6 +28,10 @@ class Exposure(object):
         return self.actor.controllers['expose'].doStop
 
     @property
+    def doFinish(self):
+        return self.actor.controllers['expose'].doFinish
+
+    @property
     def notFinished(self):
         return False in [smExp.isFinished for smExp in self.smExp]
 
@@ -77,10 +81,6 @@ class SmExposure(QThread):
         return [camExp for camExp in self.camExp if not camExp.cleared]
 
     @property
-    def doStop(self):
-        return self.exp.doStop
-
-    @property
     def replies(self):
         """check that CamExposure(s) are finished """
         return None not in [camExp.cmdVar for camExp in self.runExp]
@@ -101,7 +101,7 @@ class SmExposure(QThread):
         """ Integrate for both calib and regular exposure """
         exptime, dateobs = None, None
 
-        if not self.doStop:
+        if not self.exp.doStop:
             shutters = self.getShutters()
             if shutters is not None:
                 cmdVar = self.exp.actor.safeCall(actor=self.enu,
@@ -153,7 +153,7 @@ class SmExposure(QThread):
 
         states = [camExp.state for camExp in self.camExp]
 
-        if state not in states and not self.doStop:
+        if state not in states and not self.exp.doStop:
             raise RuntimeError
 
     def exit(self):
@@ -250,6 +250,8 @@ class CamExposure(QThread):
         while dt.utcnow() < tlim:
             if self.exp.doStop:
                 return None
+            if self.exp.doFinish:
+                break
 
             wait()
 

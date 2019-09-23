@@ -14,6 +14,7 @@ class expose(object):
         self.actor = actor
         self.name = name
         self.doStop = False
+        self.doFinish = False
 
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
@@ -22,6 +23,7 @@ class expose(object):
         """ reset exposure stop flag """
 
         self.doStop = False
+        self.doFinish = False
 
     def stopExposure(self, cmd):
         """ activate exposure stop flag, call enu exposure abort function"""
@@ -29,6 +31,13 @@ class expose(object):
 
         for enu in self.actor.enus:
             self.actor.safeCall(actor=enu, cmdStr='exposure abort', forUserCmd=cmd, timeLim=10)
+
+    def finishExposure(self, cmd):
+        """ activate exposure stop flag, call enu exposure abort function"""
+        self.doFinish = True
+
+        for enu in self.actor.enus:
+            self.actor.safeCall(actor=enu, cmdStr='exposure finish', forUserCmd=cmd, timeLim=10)
 
     def expose(self, cmd, exptype, exptime, visit, cams):
         """ create Exposure object wait for threaded jobs to be finished

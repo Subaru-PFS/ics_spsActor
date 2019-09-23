@@ -19,7 +19,8 @@ class ExposeCmd(object):
         self.vocab = [
             ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
-            ('exposure', 'abort', self.doStop)
+            ('exposure', 'abort', self.doStop),
+            ('exposure', 'finish', self.doFinish)
         ]
 
         # Define typed command arguments for the above commands.
@@ -69,3 +70,7 @@ class ExposeCmd(object):
     def doStop(self, cmd):
         self.controller.stopExposure(cmd)
         cmd.finish('text="exposure stopped"')
+
+    def doFinish(self, cmd):
+        self.controller.finishExposure(cmd)
+        cmd.finish('text="exposure finished"')
