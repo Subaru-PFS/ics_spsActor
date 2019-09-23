@@ -5,7 +5,7 @@ import numpy as np
 from actorcore.QThread import QThread
 from spsActor.utils import getKeyvar, smCam, wait
 from spsActor.utils import threaded
-from spsaitActor.logbook import Logbook
+from spsaitActor.utils.logbook import Logbook
 
 
 class Exposure(object):

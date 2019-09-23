@@ -17,7 +17,6 @@ class TopCmd(object):
         self.vocab = [
             ('ping', '', self.ping),
             ('status', '', self.status),
-            ('test', '', self.test)
 
         ]
 
@@ -34,17 +33,5 @@ class TopCmd(object):
         """Report status and version; obtain and send current data"""
 
         cmd.inform('text="Present!"')
-        cmd.finish()
-
-    def test(self, cmd):
-        """Report status and version; obtain and send current data"""
-
-        cmd.inform('text="Present!"')
-        cmdVar = self.actor.safeCall(actor='enu_sm1',
-                                     cmdStr='shutters status',
-                                     forUserCmd=cmd)
-
-
-        #print(keys)
-        #print(cmdVar.getKeyVarData('shutters'))
+        self.actor.sendVersionKey(cmd)
         cmd.finish()
