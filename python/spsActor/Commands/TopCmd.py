@@ -17,6 +17,7 @@ class TopCmd(object):
         self.vocab = [
             ('ping', '', self.ping),
             ('status', '', self.status),
+
         ]
 
         # Define typed command arguments for the above commands.
@@ -32,4 +33,5 @@ class TopCmd(object):
         """Report status and version; obtain and send current data"""
 
         cmd.inform('text="Present!"')
+        self.actor.sendVersionKey(cmd)
         cmd.finish()
