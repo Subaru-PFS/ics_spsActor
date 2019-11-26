@@ -47,7 +47,7 @@ class SpsActor(actorcore.ICC.ICC):
         return cmdVar
 
     def getSeqno(self, cmd):
-        cmdVar = self.cmdr.call(actor='seqno',
+        cmdVar = self.cmdr.call(actor='gen2',
                                 cmdStr='getVisit',
                                 forUserCmd=cmd,
                                 timeLim=10)
