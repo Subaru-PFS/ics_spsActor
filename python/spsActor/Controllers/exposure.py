@@ -3,6 +3,7 @@ from datetime import timedelta
 
 import numpy as np
 from actorcore.QThread import QThread
+from pfscore.spectroIds import getSite
 from spsActor.utils import getKeyvar, smCam, wait
 from spsActor.utils import threaded
 from spsaitActor.utils.logbook import Logbook
@@ -52,8 +53,9 @@ class Exposure(object):
 
     def store(self, visit):
         """Store Exposure in Logbook database """
-        Logbook.newExposure(exposureId='PFLA%s' % (str(visit).zfill(6)),
-                            site='L',
+        site = getSite()
+        Logbook.newExposure(exposureId=f'PF{site}A{str(visit).zfill(6)}',
+                            site=site,
                             visit=visit,
                             obsdate=self.obsdate.isoformat(),
                             exptime=self.exptime,
