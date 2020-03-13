@@ -11,27 +11,18 @@ class SpsActor(actorcore.ICC.ICC):
         # This sets up the connections to/from the hub, the logger, and the twisted reactor.
         #
         self.name = name
-
-        specIds = [i + 1 for i in range(1)]
-        allcams = ['b%i' % i for i in specIds] + ['r%i' % i for i in specIds]
-
-        self.ccds = ['ccd_%s' % cam for cam in allcams]
-        self.cam2ccd = dict([(cam, ccd) for cam, ccd in zip(allcams, self.ccds)])
-
-        self.enus = ['enu_sm%i' % i for i in specIds]
-
         actorcore.ICC.ICC.__init__(self,
                                    name,
                                    productName=productName,
                                    configFile=configFile,
-                                   modelNames=['seqno'] + self.ccds + self.enus)
+                                   modelNames=['seqno'])
 
         self.logger.setLevel(logLevel)
         self.everConnected = False
 
     @property
     def cams(self):
-        return self.config.get('sps', 'cams').split(',')
+        return [c.strip() for c in self.config.get('sps', 'cams').split(',')]
 
     def safeCall(self, **kwargs):
         cmd = kwargs["forUserCmd"]
@@ -46,8 +37,16 @@ class SpsActor(actorcore.ICC.ICC):
 
         return cmdVar
 
+    def requireModels(self, actorList, cmd):
+        """ Make sure that we are listening for a given actor keywords. """
+        actorList = [actorName for actorName in actorList if actorName not in self.models.keys()]
+
+        if actorList:
+            cmd.inform(f"text='connecting model for actors {','.join(actorList)}'")
+            self.addModels(actorList)
+
     def getSeqno(self, cmd):
-        cmdVar = self.cmdr.call(actor='gen2',
+        cmdVar = self.cmdr.call(actor='seqno',
                                 cmdStr='getVisit',
                                 forUserCmd=cmd,
                                 timeLim=10)

@@ -58,6 +58,8 @@ class ExposeCmd(object):
         cams = self.actor.cams
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
+        models = [f'ccd_{cam}' for cam in cams] + list(set([f'enu_sm{i}' for i in [int(cam[-1]) for cam in cams]]))
+        self.actor.requireModels(models, cmd=cmd)
 
         self.controller.expose(cmd=cmd,
                                exptype=exptype,
