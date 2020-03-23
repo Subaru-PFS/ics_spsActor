@@ -3,10 +3,8 @@ from datetime import timedelta
 
 import numpy as np
 from actorcore.QThread import QThread
-from pfscore.spectroIds import getSite
-from spsActor.utils import getKeyvar, smCam, wait
-from spsActor.utils import threaded
-from spsaitActor.utils.logbook import Logbook
+from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
+from spsActor.utils.opdb import opDB
 
 
 class Exposure(object):
@@ -18,7 +16,7 @@ class Exposure(object):
         self.exptime = exptime
         self.obsdate = dt.utcnow()
 
-        self.smExp = [SmExposure(self, smId, cams) for smId, cams in smCam(cams).items()]
+        self.smExp = [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
 
     @property
     def camExp(self):
@@ -52,14 +50,8 @@ class Exposure(object):
         delattr(self, 'smExp')
 
     def store(self, visit):
-        """Store Exposure in Logbook database """
-        site = getSite()
-        Logbook.newExposure(exposureId=f'PF{site}A{str(visit).zfill(6)}',
-                            site=site,
-                            visit=visit,
-                            obsdate=self.obsdate.isoformat(),
-                            exptime=self.exptime,
-                            exptype=self.exptype)
+        """Store Exposure in sps_visit table in opdb database """
+        opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
 
 
 class SmExposure(QThread):
@@ -110,12 +102,12 @@ class SmExposure(QThread):
                                                  cmdStr=f'shutters expose exptime={self.exptime} {shutters}',
                                                  forUserCmd=cmd, timeLim=self.exptime + 30)
 
-                keyvar = getKeyvar(cmdVar)
-                exptime = float(keyvar['exptime'].values[0])
+                keys = cmdKeys(cmdVar)
+                exptime = float(keys['exptime'].values[0])
                 if np.isnan(exptime):
                     exptime = None
                 else:
-                    dateobs = keyvar['dateobs'].values[0]
+                    dateobs = dt.fromisoformat(keys['dateobs'].values[0])
 
             else:
                 exptime = self.exptime
@@ -170,16 +162,10 @@ class SmExposure(QThread):
 class CamExposure(QThread):
     """ Placeholder to handle ccdActor cmd threading """
 
-    armNum = {'1': 'b',
-              '2': 'r',
-              '3': 'n',
-              '4': 'm'}
-
     def __init__(self, smExp, arm):
 
         self.exp = smExp.exp
         self.exptype = smExp.exptype
-        self.exptime = smExp.exptime
 
         self.smId = smExp.smId
         self.ccd = f'ccd_{arm}{self.smId}'
@@ -217,14 +203,15 @@ class CamExposure(QThread):
             self.clear(cmd)
             return
 
-        darktime = (dt.utcnow() - self.darktime).total_seconds()
+        self.time_exp_start = dateobs
+        self.time_exp_end = dt.utcnow()
+        self.exptime = exptime
+
+        darktime = (self.time_exp_end - self.darktime).total_seconds()
 
         cmdVar = self.actor.safeCall(actor=self.ccd,
-                                     cmdStr='read %s visit=%d exptime=%.3f darktime=%.3f obstime=%s' % (self.exptype,
-                                                                                                        visit,
-                                                                                                        exptime,
-                                                                                                        darktime,
-                                                                                                        dateobs),
+                                     cmdStr=f'read {self.exptype} visit={visit} exptime={exptime} darktime={darktime} '
+                                            f'obstime={dateobs.isoformat()}',
                                      forUserCmd=cmd,
                                      timeLim=60)
 
@@ -257,21 +244,16 @@ class CamExposure(QThread):
 
             wait()
 
-        return self.darktime.isoformat()
+        return self.darktime
 
     def store(self, cmdVar):
-        """ Store CamExposure in Logbook database """
-        keyvar = getKeyvar(cmdVar=cmdVar)
-        rootDir, dateDir, filename = keyvar['filepath'].values
+        """ Store in sps_exposure in opDB database """
+        keys = cmdKeys(cmdVar=cmdVar)
+        rootDir, dateDir, filename = keys['filepath'].values
 
-        camExposureId = filename.split('.fits')[0]
-        exposureId = camExposureId[:-2]
-        arm = self.armNum[camExposureId[-1]]
-
-        Logbook.newCamExposure(camExposureId=camExposureId,
-                               exposureId=exposureId,
-                               smId=self.smId,
-                               arm=arm)
+        visit, camera_id = describe(filename)
+        opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
+                    time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
 
     def handleTimeout(self):
         """| Is called when the thread is idle

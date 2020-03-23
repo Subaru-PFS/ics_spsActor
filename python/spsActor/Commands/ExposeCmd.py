@@ -63,8 +63,8 @@ class ExposeCmd(object):
 
         self.controller.expose(cmd=cmd,
                                exptype=exptype,
-                               exptime=exptime,
-                               visit=visit,
+                               exptime=float(exptime),
+                               visit=int(visit),
                                cams=cams)
 
         cmd.finish('visit=%d' % visit)
