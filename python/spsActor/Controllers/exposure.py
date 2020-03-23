@@ -3,9 +3,8 @@ from datetime import timedelta
 
 import numpy as np
 from actorcore.QThread import QThread
-from spsActor.opdb import opDB, describe
-from spsActor.utils import getKeyvar, smCam, wait
-from spsActor.utils import threaded
+from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
+from spsActor.utils.opdb import opDB
 
 
 class Exposure(object):
@@ -17,7 +16,7 @@ class Exposure(object):
         self.exptime = exptime
         self.obsdate = dt.utcnow()
 
-        self.smExp = [SmExposure(self, smId, cams) for smId, cams in smCam(cams).items()]
+        self.smExp = [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
 
     @property
     def camExp(self):
@@ -52,8 +51,7 @@ class Exposure(object):
 
     def store(self, visit):
         """Store Exposure in sps_visit table in opdb database """
-        opDB.new_sps_visit(pfs_visit_id=visit,
-                           exp_type=self.exptype)
+        opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
 
 
 class SmExposure(QThread):
@@ -104,12 +102,12 @@ class SmExposure(QThread):
                                                  cmdStr=f'shutters expose exptime={self.exptime} {shutters}',
                                                  forUserCmd=cmd, timeLim=self.exptime + 30)
 
-                keyvar = getKeyvar(cmdVar)
-                exptime = float(keyvar['exptime'].values[0])
+                keys = cmdKeys(cmdVar)
+                exptime = float(keys['exptime'].values[0])
                 if np.isnan(exptime):
                     exptime = None
                 else:
-                    dateobs = keyvar['dateobs'].values[0]
+                    dateobs = dt.fromisoformat(keys['dateobs'].values[0])
 
             else:
                 exptime = self.exptime
@@ -212,11 +210,8 @@ class CamExposure(QThread):
         darktime = (self.time_exp_end - self.darktime).total_seconds()
 
         cmdVar = self.actor.safeCall(actor=self.ccd,
-                                     cmdStr='read %s visit=%d exptime=%.3f darktime=%.3f obstime=%s' % (self.exptype,
-                                                                                                        visit,
-                                                                                                        exptime,
-                                                                                                        darktime,
-                                                                                                        dateobs),
+                                     cmdStr=f'read {self.exptype} visit={visit} exptime={exptime} darktime={darktime} '
+                                            f'obstime={dateobs.isoformat()}',
                                      forUserCmd=cmd,
                                      timeLim=60)
 
@@ -249,19 +244,16 @@ class CamExposure(QThread):
 
             wait()
 
-        return self.darktime.isoformat()
+        return self.darktime
 
     def store(self, cmdVar):
         """ Store in sps_exposure in opDB database """
-        keyvar = getKeyvar(cmdVar=cmdVar)
-        rootDir, dateDir, filename = keyvar['filepath'].values
+        keys = cmdKeys(cmdVar=cmdVar)
+        rootDir, dateDir, filename = keys['filepath'].values
 
         visit, camera_id = describe(filename)
-        opDB.new_sps_exposure(pfs_visit_id=self.visit,
-                              sps_camera_id=camera_id,
-                              exptime=self.exptime,
-                              time_exp_start=self.time_exp_start,
-                              time_exp_end=self.time_exp_end)
+        opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
+                    time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
 
     def handleTimeout(self):
         """| Is called when the thread is idle
