@@ -19,8 +19,8 @@ class ExposeCmd(object):
         self.vocab = [
             ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
-            ('exposure', 'abort', self.doStop),
-            ('exposure', 'finish', self.doFinish)
+            ('exposure', 'abort', self.abort),
+            ('exposure', 'finish', self.finish)
         ]
 
         # Define typed command arguments for the above commands.
@@ -43,7 +43,6 @@ class ExposeCmd(object):
 
     @singleShot
     def doExposure(self, cmd):
-        self.controller.resetExposure()
         cmdKeys = cmd.cmd.keywords
 
         exptype = 'object'
@@ -69,10 +68,18 @@ class ExposeCmd(object):
 
         cmd.finish('visit=%d' % visit)
 
-    def doStop(self, cmd):
-        self.controller.stopExposure(cmd)
-        cmd.finish('text="exposure stopped"')
+    def abort(self, cmd):
+        if self.controller.current is None:
+            cmd.fail('text="Exposure is not currently on going"')
+            return
 
-    def doFinish(self, cmd):
-        self.controller.finishExposure(cmd)
+        self.controller.current.abort(cmd)
+        cmd.finish('text="exposure aborted"')
+
+    def finish(self, cmd):
+        if self.controller.current is None:
+            cmd.fail('text="Exposure is not currently on going"')
+            return
+
+        self.controller.current.finish(cmd)
         cmd.finish('text="exposure finished"')

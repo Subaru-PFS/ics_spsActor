@@ -11,6 +11,8 @@ class Exposure(object):
     """ Exposure object """
 
     def __init__(self, actor, exptype, exptime, cams):
+        self.doAbort = False
+        self.doFinish = False
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
@@ -23,20 +25,18 @@ class Exposure(object):
         return sum([smExp.camExp for smExp in self.smExp], [])
 
     @property
-    def doStop(self):
-        return self.actor.controllers['expose'].doStop
-
-    @property
-    def doFinish(self):
-        return self.actor.controllers['expose'].doFinish
-
-    @property
     def notFinished(self):
         return False in [smExp.isFinished for smExp in self.smExp]
 
     @property
     def isIdle(self):
         return 'idle' in [camExp.state for camExp in self.camExp]
+
+    def abort(self, cmd):
+        self.doAbort = True
+
+    def finish(self, cmd):
+        self.doFinish = True
 
     def start(self, cmd, visit):
         """ Start all spectrograph module exposures """
@@ -95,7 +95,7 @@ class SmExposure(QThread):
         """ Integrate for both calib and regular exposure """
         exptime, dateobs = None, None
 
-        if not self.exp.doStop:
+        if not self.exp.doAbort:
             shutters = self.getShutters()
             if shutters is not None:
                 cmdVar = self.exp.actor.safeCall(actor=self.enu,
@@ -147,7 +147,7 @@ class SmExposure(QThread):
 
         states = [camExp.state for camExp in self.camExp]
 
-        if state not in states and not self.exp.doStop:
+        if state not in states and not self.exp.doAbort:
             raise RuntimeError
 
     def exit(self):
@@ -237,7 +237,7 @@ class CamExposure(QThread):
         tlim = self.darktime + timedelta(seconds=exptime)
 
         while dt.utcnow() < tlim:
-            if self.exp.doStop:
+            if self.exp.doAbort:
                 return None
             if self.exp.doFinish:
                 break

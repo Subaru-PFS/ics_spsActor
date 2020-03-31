@@ -13,31 +13,10 @@ class expose(object):
         """
         self.actor = actor
         self.name = name
-        self.doStop = False
-        self.doFinish = False
+        self.current = None
 
         self.logger = logging.getLogger(self.name)
         self.logger.setLevel(loglevel)
-
-    def resetExposure(self):
-        """ reset exposure stop flag """
-
-        self.doStop = False
-        self.doFinish = False
-
-    def stopExposure(self, cmd):
-        """ activate exposure stop flag, call enu exposure abort function"""
-        self.doStop = True
-
-        for enu in self.actor.enus:
-            self.actor.safeCall(actor=enu, cmdStr='exposure abort', forUserCmd=cmd, timeLim=10)
-
-    def finishExposure(self, cmd):
-        """ activate exposure stop flag, call enu exposure abort function"""
-        self.doFinish = True
-
-        for enu in self.actor.enus:
-            self.actor.safeCall(actor=enu, cmdStr='exposure finish', forUserCmd=cmd, timeLim=10)
 
     def expose(self, cmd, exptype, exptime, visit, cams):
         """ create Exposure object wait for threaded jobs to be finished
@@ -45,22 +24,23 @@ class expose(object):
         raise RuntimeError if not a single CamExposure file has been created
         finally: free up all ressources
         """
-        exp = Exposure(self.actor, exptype, exptime, cams)
+        self.current = Exposure(self.actor, exptype, exptime, cams)
 
         try:
-            exp.start(cmd, visit)
+            self.current.start(cmd, visit)
 
-            while exp.notFinished:
+            while self.current.notFinished:
                 wait()
 
-            if not exp.isIdle:
-                msg = 'Exposure aborted' if self.doStop else 'Exposure has failed'
+            if not self.current.isIdle:
+                msg = 'Exposure aborted' if self.current.doAbort else 'Exposure has failed'
                 raise RuntimeError(msg)
 
-            exp.store(visit)
+            self.current.store(visit)
 
         finally:
-            exp.exit()
+            self.current.exit()
+            self.current = None
 
     def start(self, *args, **kwargs):
         pass
