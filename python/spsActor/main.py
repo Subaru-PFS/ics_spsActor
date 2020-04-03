@@ -4,6 +4,7 @@ import argparse
 import logging
 
 import actorcore.ICC
+from pfscore.gen2 import fetchVisitFromGen2
 
 
 class SpsActor(actorcore.ICC.ICC):
@@ -14,8 +15,7 @@ class SpsActor(actorcore.ICC.ICC):
         actorcore.ICC.ICC.__init__(self,
                                    name,
                                    productName=productName,
-                                   configFile=configFile,
-                                   modelNames=['seqno'])
+                                   configFile=configFile)
 
         self.logger.setLevel(logLevel)
         self.everConnected = False
@@ -45,18 +45,8 @@ class SpsActor(actorcore.ICC.ICC):
             cmd.inform(f"text='connecting model for actors {','.join(actorList)}'")
             self.addModels(actorList)
 
-    def getSeqno(self, cmd):
-        cmdVar = self.cmdr.call(actor='seqno',
-                                cmdStr='getVisit',
-                                forUserCmd=cmd,
-                                timeLim=10)
-
-        if cmdVar.didFail or not cmdVar.isDone:
-            raise ValueError('getVisit has failed')
-
-        visit = cmdVar.lastReply.keywords['visit'].values[0]
-
-        return int(visit)
+    def getVisit(self, cmd):
+        return fetchVisitFromGen2(self, cmd)
 
     def connectionMade(self):
         if self.everConnected is False:

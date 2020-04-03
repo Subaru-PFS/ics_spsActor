@@ -52,7 +52,7 @@ class ExposeCmd(object):
         exptype = 'dark' if 'dark' in cmdKeys else exptype
 
         exptime = cmdKeys['exptime'].values[0] if exptype is not 'bias' else 0
-        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getSeqno(cmd=cmd)
+        visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
 
         cams = self.actor.cams
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
