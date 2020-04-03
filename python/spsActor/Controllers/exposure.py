@@ -4,7 +4,7 @@ from datetime import timedelta
 import numpy as np
 from actorcore.QThread import QThread
 from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
-from spsActor.utils.opdb import opDB
+from pfs.utils.opdb import opDB
 
 
 class Exposure(object):
