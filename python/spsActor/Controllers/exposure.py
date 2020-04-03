@@ -3,8 +3,8 @@ from datetime import timedelta
 
 import numpy as np
 from actorcore.QThread import QThread
-from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
 from pfs.utils.opdb import opDB
+from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
 
 
 class Exposure(object):
@@ -49,9 +49,12 @@ class Exposure(object):
             smExp.exit()
         delattr(self, 'smExp')
 
-    def store(self, visit):
+    def store(self, cmd, visit):
         """Store Exposure in sps_visit table in opdb database """
-        opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
+        try:
+            opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
+        except Exception as e:
+            cmd.warn('text=%s' % self.actor.strTraceback(e))
 
 
 class SmExposure(QThread):
@@ -172,6 +175,7 @@ class CamExposure(QThread):
 
         self.cmdVar = None
         self.cleared = False
+        self.storable = False
 
         QThread.__init__(self, self.exp.actor, self.ccd)
         QThread.start(self)
@@ -215,8 +219,7 @@ class CamExposure(QThread):
                                      forUserCmd=cmd,
                                      timeLim=60)
 
-        if self.handleReply(cmd, cmdVar=cmdVar):
-            self.store(cmdVar=cmdVar)
+        self.storable = self.handleReply(cmd, cmdVar=cmdVar)
 
     def handleReply(self, cmd, cmdVar):
         """ Clear ccd is command has failed """
@@ -246,14 +249,26 @@ class CamExposure(QThread):
 
         return self.darktime
 
-    def store(self, cmdVar):
+    def store(self, cmdVar=None):
         """ Store in sps_exposure in opDB database """
+        cmdVar = self.cmdVar if cmdVar is None else cmdVar
         keys = cmdKeys(cmdVar=cmdVar)
         rootDir, dateDir, filename = keys['filepath'].values
 
         visit, camera_id = describe(filename)
-        opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
-                    time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
+
+        try:
+            opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
+                        time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
+        except Exception as e:
+            self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
+
+    def exit(self):
+        """Store in opDB before exiting"""
+        if self.storable:
+            self.store()
+
+        QThread.exit(self)
 
     def handleTimeout(self):
         """| Is called when the thread is idle

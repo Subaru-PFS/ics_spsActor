@@ -36,7 +36,7 @@ class expose(object):
                 msg = 'Exposure aborted' if self.current.doAbort else 'Exposure has failed'
                 raise RuntimeError(msg)
 
-            self.current.store(visit)
+            self.current.store(cmd, visit)
 
         finally:
             self.current.exit()
