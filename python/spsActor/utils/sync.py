@@ -1,62 +1,83 @@
 import time
-from functools import partial
 
 from actorcore.QThread import QThread
+from spsActor.utils import wait, threaded, parseArgs
 
 
-def putMsg(func):
-    def wrapper(self, cmd, *args, **kwargs):
-        self.putMsg(partial(func, self, cmd, *args, **kwargs))
+class Sync(object):
+    def __init__(self):
+        self.cmdThd = []
 
-    return wrapper
+    @property
+    def cmdVars(self):
+        return [th.cmdVar for th in self.cmdThd]
 
+    @classmethod
+    def spectrograph(cls, spsActor, specNums, cmdStr, **kwargs):
+        obj = cls()
+        obj.cmdThd = [EnuThread(spsActor, specNum, cmdStr, **kwargs) for specNum in specNums]
+        return obj
 
-def threaded(func):
-    @putMsg
-    def wrapper(self, cmd, *args, **kwargs):
-        try:
-            return func(self, cmd, *args, **kwargs)
-        except Exception as e:
-            cmd.fail('text=%s' % self.actor.strTraceback(e))
-
-    return wrapper
-
-
-class SyncCmd(object):
-    def __init__(self, actor, cmdList):
-        self.cmdThd = [CmdThread(actor, cmdStr=cmdStr) for cmdStr in cmdList]
+    @classmethod
+    def camera(cls, actor, cams, cmdStr, **kwargs):
+        obj = cls()
+        obj.cmdThd = [XcuThread(actor, cam, cmdStr, **kwargs) for cam in cams]
+        return obj
 
     def process(self, cmd):
         self.call(cmd)
         self.sync()
-        self.exit()
+        return self.examAndExit()
 
     def call(self, cmd):
         for th in self.cmdThd:
             th.call(cmd)
 
     def sync(self):
-        while None in [th.cmdVar for th in self.cmdThd]:
-            time.sleep(1)
+        while None in self.cmdVars:
+            wait()
 
-    def exit(self):
-        for ti in self.cmdThd:
-            ti.exit()
+    def examAndExit(self):
+        cams = []
+        for th in self.cmdThd:
+            cams.extend(th.exposable)
+            th.exit()
+        delattr(self, 'cmdThd')
 
 
 class CmdThread(QThread):
-    def __init__(self, actor, cmdStr):
+    def __init__(self, spsActor, actorName, cmdStr, **kwargs):
+        cmdStr = ' '.join([cmdStr] + parseArgs(**kwargs))
         self.cmdVar = None
-        self.actorName, self.cmdStr = cmdStr.split(' ', 1)
-        QThread.__init__(self, actor, str(time.time()))
+        self.actorName = actorName
+        self.cmdStr = cmdStr
+        QThread.__init__(self, spsActor, str(time.time()))
         QThread.start(self)
 
     @threaded
     def call(self, cmd):
-        cmd.inform(f'text="calling {self.actorName} {self.cmdStr}"')
-        cmdVar = self.actor.safeCall(actor=self.actorName, cmdStr=self.cmdStr, forUserCmd=cmd)
+        self.cmdVar = self.actor.safeCall(actor=self.actorName, cmdStr=self.cmdStr, forUserCmd=cmd)
 
-        if not cmdVar.didFail:
-            cmd.inform(f'text="{self.actorName} {self.cmdStr} OK"')
 
-        self.cmdVar = cmdVar
+class EnuThread(CmdThread):
+    def __init__(self, spsActor, specNum, cmdStr, **kwargs):
+        self.specNum = specNum
+        actorName = f'enu_sm{specNum}'
+        CmdThread.__init__(self, spsActor, actorName, cmdStr, **kwargs)
+
+    @property
+    def exposable(self):
+        cams = [f'{arm}{self.specNum}' for arm in ['b', 'r', 'n']] if not self.cmdVar.didFail else []
+        return cams
+
+
+class XcuThread(CmdThread):
+    def __init__(self, spsActor, cam, cmdStr, **kwargs):
+        self.cam = cam
+        actorName = f'xcu_{cam}'
+        CmdThread.__init__(self, spsActor, actorName, cmdStr, **kwargs)
+
+    @property
+    def exposable(self):
+        cams = [self.cam] if not self.cmdVar.didFail else []
+        return cams

@@ -40,6 +40,17 @@ def cmdKeys(cmdVar):
     return dict(sum([[(k.name, k) for k in reply.keywords] for reply in cmdVar.replyList], []))
 
 
+def parseArgs(**kwargs):
+    """ Strip given text field from rawCmd """
+    args = []
+    for k, v in kwargs.items():
+        if v is None or v is False:
+            continue
+        args.append(k if v is True else f'{k}={v}')
+
+    return args
+
+
 def wait(ti=0.001):
     time.sleep(ti)
 
