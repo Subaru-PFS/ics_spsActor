@@ -49,6 +49,7 @@ class SyncCmd(object):
             raise RuntimeError('%s controller is not connected.' % self.name)
 
     def slitFocus(self, cmd):
+        """ Focus multiple slits synchronously. """
         cams = self.actor.cams
         cmdKeys = cmd.cmd.keywords
         focus = cmdKeys['focus'].values[0]
@@ -57,17 +58,17 @@ class SyncCmd(object):
         abs = 'abs' in cmdKeys
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.spectrograph(self.actor, specNums=specNums,
-                                    cmdStr='slit', focus=focus, microns=microns, abs=abs)
+        syncCmd = Sync.slit(self.actor, specNums=specNums, cmdHead='', focus=focus, microns=microns, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
-            cmd.fail('text="failed to focus slit"')
+            cmd.fail('text="failed to focus any slit"')
             return
 
         cmd.finish(f'exposable={",".join(cams)}')
 
     def slitDither(self, cmd):
+        """ Dither multiple slits synchronously. """
         cams = self.actor.cams
         cmdKeys = cmd.cmd.keywords
         ditherX = cmdKeys['x'].values[0] if 'x' in cmdKeys else None
@@ -79,17 +80,18 @@ class SyncCmd(object):
 
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.spectrograph(self.actor, specNums=specNums,
-                                    cmdStr='slit dither', x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
+        syncCmd = Sync.slit(self.actor, specNums=specNums, cmdHead='dither',
+                            x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
-            cmd.fail('text="failed to focus slit"')
+            cmd.fail('text="failed to dither any slit"')
             return
 
         cmd.finish(f'exposable={",".join(cams)}')
 
     def ccdMotors(self, cmd):
+        """ Move multiple ccdMotors synchronously. """
         cams = self.actor.cams
         cmdKeys = cmd.cmd.keywords
         a = cmdKeys['a'].values[0] if 'a' in cmdKeys else None
@@ -100,12 +102,12 @@ class SyncCmd(object):
         microns = 'microns' in cmdKeys
         abs = 'abs' in cmdKeys
 
-        syncCmd = Sync.camera(self.actor, cams=cams,
-                              cmdStr='motors move', a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
+        syncCmd = Sync.ccdMotors(self.actor, cams=cams, cmdHead='move',
+                                 a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
-            cmd.fail('text="failed to command focus motors"')
+            cmd.fail('text="failed to command any ccd focus motors"')
             return
 
         cmd.finish(f'exposable={",".join(cams)}')

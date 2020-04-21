@@ -2,6 +2,7 @@
 
 import argparse
 import logging
+import time
 
 import actorcore.ICC
 from pfscore.gen2 import fetchVisitFromGen2
@@ -37,13 +38,15 @@ class SpsActor(actorcore.ICC.ICC):
 
         return cmdVar
 
-    def requireModels(self, actorList, cmd):
+    def requireModels(self, actorList, cmd=None):
         """ Make sure that we are listening for a given actor keywords. """
+        cmd = self.bcast if cmd is None else cmd
         actorList = [actorName for actorName in actorList if actorName not in self.models.keys()]
 
         if actorList:
             cmd.inform(f"text='connecting model for actors {','.join(actorList)}'")
             self.addModels(actorList)
+            time.sleep(1)
 
     def getVisit(self, cmd):
         return fetchVisitFromGen2(self, cmd)
