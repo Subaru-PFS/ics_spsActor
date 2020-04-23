@@ -20,9 +20,15 @@ class Sync(object):
     @classmethod
     def slit(cls, spsActor, specNums, cmdHead, **kwargs):
         """ Create slit command thread from specNums. """
-        cmdStr = f'slit {cmdHead}'.strip() if 'slit' not in cmdHead else cmdHead
         obj = cls()
-        obj.cmdThd = [Slit(spsActor, specNum, cmdStr, **kwargs) for specNum in specNums]
+        obj.cmdThd = [Slit(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
+        return obj
+
+    @classmethod
+    def iis(cls, spsActor, specNums, cmdHead, **kwargs):
+        """ Create slit command thread from specNums. """
+        obj = cls()
+        obj.cmdThd = [Iis(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
         return obj
 
     @classmethod
@@ -62,12 +68,13 @@ class Sync(object):
 class CmdThread(QThread):
     """ Placeholder to a handle a single command thread. """
 
-    def __init__(self, spsActor, actorName, cmdStr, **kwargs):
+    def __init__(self, spsActor, actorName, cmdStr, timeLim=60, **kwargs):
         cmdStr = ' '.join([cmdStr] + parseArgs(**kwargs))
         self.cmdVar = None
         self.cancelled = False
         self.actorName = actorName
         self.cmdStr = cmdStr
+        self.timeLim = timeLim
         QThread.__init__(self, spsActor, str(time.time()))
         QThread.start(self)
 
@@ -97,7 +104,7 @@ class CmdThread(QThread):
         """ Execute precheck, cancel if an exception is raised, if not call command in the thread. """
         try:
             self.precheck()
-            self.cmdVar = self.actor.safeCall(actor=self.actorName, cmdStr=self.cmdStr, forUserCmd=cmd)
+            self.cmdVar = self.actor.safeCall(cmd, actor=self.actorName, cmdStr=self.cmdStr, timeLim=self.timeLim)
         except Exception as e:
             cmd.warn('text=%s' % self.actor.strTraceback(e))
             self.cancel()
@@ -114,11 +121,11 @@ class CmdThread(QThread):
 class EnuThread(CmdThread):
     """ Placeholder to a handle enu command thread. """
 
-    def __init__(self, spsActor, specNum, cmdStr, **kwargs):
+    def __init__(self, spsActor, specNum, cmdStr, timeLim=60, **kwargs):
         self.specNum = specNum
         actorName = f'enu_sm{specNum}'
         spsActor.requireModels([actorName])
-        CmdThread.__init__(self, spsActor, actorName, cmdStr, **kwargs)
+        CmdThread.__init__(self, spsActor, actorName, cmdStr, timeLim=timeLim, **kwargs)
 
     @property
     def cams(self):
@@ -142,7 +149,8 @@ class XcuThread(CmdThread):
 class Slit(EnuThread):
     """ Placeholder to a handle slit command thread. """
 
-    def __init__(self, spsActor, specNum, cmdStr, **kwargs):
+    def __init__(self, spsActor, specNum, cmdHead, **kwargs):
+        cmdStr = f'slit {cmdHead}'.strip() if 'slit' not in cmdHead else cmdHead
         EnuThread.__init__(self, spsActor, specNum, cmdStr, **kwargs)
 
     def precheck(self):
@@ -151,6 +159,21 @@ class Slit(EnuThread):
 
         if not (state == 'ONLINE' and substate == 'IDLE'):
             raise ValueError(f'{self.actorName}__slitFSM={state},{substate} != ONLINE,IDLE before moving, aborting ...')
+
+
+class Iis(EnuThread):
+    """ Placeholder to a handle iis command thread. """
+
+    def __init__(self, spsActor, specNum, cmdHead, timeLim=60, **kwargs):
+        cmdStr = f'iis {cmdHead}'.strip() if 'iis' not in cmdHead else cmdHead
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=timeLim, **kwargs)
+
+    def precheck(self):
+        """ Check that the slit in the correct state prior to any movement. """
+        state, substate = self.keyVarDict['iisFSM'].getValue(doRaise=False)
+
+        if not (state == 'ONLINE' and substate == 'IDLE'):
+            raise ValueError(f'{self.actorName}__iisFSM={state},{substate} != ONLINE,IDLE, aborting ...')
 
 
 class CcdMotors(XcuThread):
