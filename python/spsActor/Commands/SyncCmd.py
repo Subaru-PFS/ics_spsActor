@@ -20,6 +20,8 @@ class SyncCmd(object):
             ('slit', '<focus> [@(microns)] [@(abs)] [<cams>]', self.slitFocus),
             ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<cams>]', self.slitDither),
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
+            ('iis', '[<on>] [<warmingTime>]', self.iisOn),
+            ('iis', '<off>', self.iisOff),
         ]
 
         # Define typed command arguments for the above commands.
@@ -39,6 +41,11 @@ class SyncCmd(object):
                                                  help='dither in pixels wrt ccd x direction'),
                                         keys.Key("y", types.Float(),
                                                  help='dither in pixels wrt ccd y direction'),
+                                        keys.Key('on', types.String() * (1, None),
+                                                 help='which iis lamp to switch on.'),
+                                        keys.Key('off', types.String() * (1, None),
+                                                 help='which iis lamp to switch off.'),
+                                        keys.Key('warmingTime', types.Float(), help='customizable warming time'),
                                         )
 
     @property
@@ -111,3 +118,40 @@ class SyncCmd(object):
             return
 
         cmd.finish(f'exposable={",".join(cams)}')
+
+    def iisOn(self, cmd):
+        """ Turn multiple iis on synchronously. """
+        cams = self.actor.cams
+        cmdKeys = cmd.cmd.keywords
+        on = ','.join(cmdKeys['on'].values) if 'on' in cmdKeys else None
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
+        warmingTime = cmdKeys['warmingTime'].values[0] if 'warmingTime' in cmdKeys else None
+        timeLim = warmingTime if warmingTime is not None else 60
+        specNums = list(set([int(cam[-1]) for cam in cams]))
+
+        syncCmd = Sync.iis(self.actor, specNums=specNums, cmdHead='',
+                           on=on, warmingTime=warmingTime, timeLim=timeLim + 30)
+
+        cams = list(syncCmd.process(cmd) & set(cams))
+        if not cams:
+            cmd.fail('text="failed to command iis"')
+            return
+
+        cmd.finish(f'exposable={",".join(cams)}')
+
+    def iisOff(self, cmd):
+        """ Turn multiple iis off synchronously. """
+        cams = self.actor.cams
+        cmdKeys = cmd.cmd.keywords
+        off = ','.join(cmdKeys['off'].values)
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
+        specNums = list(set([int(cam[-1]) for cam in cams]))
+
+        syncCmd = Sync.iis(self.actor, specNums=specNums, cmdHead='', off=off)
+
+        cams = list(syncCmd.process(cmd) & set(cams))
+        if not cams:
+            cmd.fail('text="failed to command iis"')
+            return
+
+        cmd.finish()
