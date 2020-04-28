@@ -25,16 +25,14 @@ class SpsActor(actorcore.ICC.ICC):
     def cams(self):
         return [c.strip() for c in self.config.get('sps', 'cams').split(',')]
 
-    def safeCall(self, **kwargs):
-        cmd = kwargs["forUserCmd"]
-        kwargs["timeLim"] = 300 if "timeLim" not in kwargs.keys() else kwargs["timeLim"]
-
-        cmdVar = self.cmdr.call(**kwargs)
+    def safeCall(self, cmd, actor, cmdStr, timeLim=60):
+        cmdVar = self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd)
 
         if cmdVar.didFail:
             reply = cmdVar.replyList[-1]
             repStr = reply.keywords.canonical(delimiter=';')
-            cmd.warn(repStr.replace('command failed', f'{kwargs["actor"]} {kwargs["cmdStr"].split(" ", 1)[0]} failed'))
+            cmdHead = cmdStr.split(" ", 1)[0]
+            cmd.warn(repStr.replace('command failed', f'{actor} {cmdHead} failed'))
 
         return cmdVar
 

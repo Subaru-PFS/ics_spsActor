@@ -29,7 +29,7 @@ class expose(object):
         try:
             self.current.start(cmd, visit)
 
-            while self.current.notFinished:
+            while not self.current.isFinished:
                 wait()
 
             if not self.current.isIdle:

@@ -21,22 +21,30 @@ class Exposure(object):
         self.smExp = [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
 
     @property
+    def isCalib(self):
+        return self.exptype in ['bias', 'dark']
+
+    @property
     def camExp(self):
         return sum([smExp.camExp for smExp in self.smExp], [])
 
     @property
-    def notFinished(self):
-        return False in [smExp.isFinished for smExp in self.smExp]
+    def isFinished(self):
+        return all([smExp.isFinished for smExp in self.smExp])
 
     @property
     def isIdle(self):
-        return 'idle' in [camExp.state for camExp in self.camExp]
+        return any([camExp.state == 'idle' for camExp in self.camExp])
 
     def abort(self, cmd):
         self.doAbort = True
+        for exp in self.smExp:
+            exp.abort(cmd)
 
     def finish(self, cmd):
         self.doFinish = True
+        for exp in self.smExp:
+            exp.finish(cmd)
 
     def start(self, cmd, visit):
         """ Start all spectrograph module exposures """
@@ -82,9 +90,13 @@ class SmExposure(QThread):
         """check that CamExposure(s) are finished """
         return None not in [camExp.cmdVar for camExp in self.runExp]
 
+    @property
+    def isIntegrating(self):
+        return any([camExp.state == 'integrating' for camExp in self.camExp])
+
     def getShutters(self):
         """ Build argument to enu shutters expose cmd """
-        if self.exptype in ['bias', 'dark']:
+        if self.exp.isCalib:
             return None
         return '' if 'b' in self.arms else 'red'
 
@@ -101,12 +113,12 @@ class SmExposure(QThread):
         if not self.exp.doAbort:
             shutters = self.getShutters()
             if shutters is not None:
-                cmdVar = self.exp.actor.safeCall(actor=self.enu,
+                cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu,
                                                  cmdStr=f'shutters expose exptime={self.exptime} {shutters}',
-                                                 forUserCmd=cmd, timeLim=self.exptime + 30)
+                                                 timeLim=self.exptime + 30)
 
                 keys = cmdKeys(cmdVar)
-                exptime = float(keys['exptime'].values[0])
+                exptime = float(keys['exptime'].values[0]) if not cmdVar.didFail else np.nan
                 if np.isnan(exptime):
                     exptime = None
                 else:
@@ -153,6 +165,14 @@ class SmExposure(QThread):
         if state not in states and not self.exp.doAbort:
             raise RuntimeError
 
+    def abort(self, cmd):
+        if self.isIntegrating and not self.exp.isCalib:
+            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr=f'exposure abort')
+
+    def finish(self, cmd):
+        if self.isIntegrating and not self.exp.isCalib:
+            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr=f'exposure finish')
+
     def exit(self):
         """ Free up all resources """
         for camExp in self.camExp:
@@ -190,7 +210,7 @@ class CamExposure(QThread):
     @threaded
     def wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
-        cmdVar = self.actor.safeCall(actor=self.ccd, cmdStr='wipe', forUserCmd=cmd, timeLim=20)
+        cmdVar = self.actor.safeCall(cmd, actor=self.ccd, cmdStr='wipe')
 
         if self.handleReply(cmd, cmdVar=cmdVar):
             self.darktime = dt.utcnow()
@@ -213,11 +233,9 @@ class CamExposure(QThread):
 
         darktime = (self.time_exp_end - self.darktime).total_seconds()
 
-        cmdVar = self.actor.safeCall(actor=self.ccd,
+        cmdVar = self.actor.safeCall(cmd, actor=self.ccd,
                                      cmdStr=f'read {self.exptype} visit={visit} exptime={exptime} darktime={darktime} '
-                                            f'obstime={dateobs.isoformat()}',
-                                     forUserCmd=cmd,
-                                     timeLim=60)
+                                            f'obstime={dateobs.isoformat()}')
 
         self.storable = self.handleReply(cmd, cmdVar=cmdVar)
 
@@ -232,7 +250,7 @@ class CamExposure(QThread):
 
     def clear(self, cmd):
         """ Call ccdActor clearExposure command """
-        self.cmdVar = self.actor.safeCall(actor=self.ccd, cmdStr='clearExposure', forUserCmd=cmd, timeLim=20)
+        self.cmdVar = self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure')
         self.cleared = True
 
     def integrate(self, exptime):
