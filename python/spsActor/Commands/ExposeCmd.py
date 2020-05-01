@@ -3,7 +3,7 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from spsActor.Controllers.exposure import Calib, Exposure
+from spsActor.utils.exposure import Calib, Exposure
 from spsActor.utils import singleShot, wait
 
 
