@@ -6,6 +6,10 @@ from actorcore.QThread import QThread
 from pfscore.spectroIds import SpectroIds
 
 
+def armStr(armNum):
+    return dict([(v, k) for k, v in SpectroIds.validArms.items()])[armNum]
+
+
 def describe(filename):
     exposureId = os.path.splitext(filename)[0]
     if len(exposureId) != 12:
@@ -15,7 +19,7 @@ def describe(filename):
     specId = int(exposureId[10])
     armNum = int(exposureId[11])
 
-    return visit, cameraId(specId, armNum)
+    return visit, cameraId(specId, armNum), f'{armStr(armNum)}{specId}'
 
 
 def cameraId(specId, arm):
@@ -40,7 +44,7 @@ def cmdKeys(cmdVar):
     return dict(sum([[(k.name, k) for k in reply.keywords] for reply in cmdVar.replyList], []))
 
 
-def parseArgs(**kwargs):
+def parse(cmdStr, **kwargs):
     """ Strip given text field from rawCmd """
     args = []
     for k, v in kwargs.items():
@@ -48,7 +52,7 @@ def parseArgs(**kwargs):
             continue
         args.append(k if v is True else f'{k}={v}')
 
-    return args
+    return ' '.join([cmdStr.strip()] + args)
 
 
 def wait(ti=0.001):

@@ -1,7 +1,7 @@
 import time
 
 from actorcore.QThread import QThread
-from spsActor.utils import wait, threaded, parseArgs
+from spsActor.utils import wait, threaded
 
 
 class Sync(object):
@@ -69,7 +69,7 @@ class CmdThread(QThread):
     """ Placeholder to a handle a single command thread. """
 
     def __init__(self, spsActor, actorName, cmdStr, timeLim=60, **kwargs):
-        cmdStr = ' '.join([cmdStr] + parseArgs(**kwargs))
+        self.kwargs = kwargs
         self.cmdVar = None
         self.cancelled = False
         self.actorName = actorName
@@ -104,7 +104,8 @@ class CmdThread(QThread):
         """ Execute precheck, cancel if an exception is raised, if not call command in the thread. """
         try:
             self.precheck()
-            self.cmdVar = self.actor.safeCall(cmd, actor=self.actorName, cmdStr=self.cmdStr, timeLim=self.timeLim)
+            self.cmdVar = self.actor.safeCall(cmd, actor=self.actorName, cmdStr=self.cmdStr, timeLim=self.timeLim,
+                                              **self.kwargs)
         except Exception as e:
             cmd.warn('text=%s' % self.actor.strTraceback(e))
             self.cancel()

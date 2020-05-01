@@ -6,6 +6,7 @@ import time
 
 import actorcore.ICC
 from pfscore.gen2 import fetchVisitFromGen2
+from spsActor.utils import parse
 
 
 class SpsActor(actorcore.ICC.ICC):
@@ -25,7 +26,8 @@ class SpsActor(actorcore.ICC.ICC):
     def cams(self):
         return [c.strip() for c in self.config.get('sps', 'cams').split(',')]
 
-    def safeCall(self, cmd, actor, cmdStr, timeLim=60):
+    def safeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
+        cmdStr = parse(cmdStr, **kwargs)
         cmdVar = self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd)
 
         if cmdVar.didFail:
@@ -51,11 +53,14 @@ class SpsActor(actorcore.ICC.ICC):
 
     def connectionMade(self):
         if self.everConnected is False:
-            logging.info("Attaching Controllers")
             self.allControllers = [s.strip() for s in self.config.get(self.name, 'startingControllers').split(',')]
-            self.attachAllControllers()
+
+            if any(self.allControllers):
+                logging.info("Attaching Controllers")
+                self.attachAllControllers()
+                logging.info("All Controllers started")
+
             self.everConnected = True
-            logging.info("All Controllers started")
 
 
 def main():
