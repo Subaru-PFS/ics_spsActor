@@ -1,14 +1,13 @@
 from datetime import datetime as dt
 from datetime import timedelta
 
-import numpy as np
 from actorcore.QThread import QThread
 from pfs.utils.opdb import opDB
 from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
 
 
 class Exposure(object):
-    """ Exposure object """
+    """ Exposure object. """
 
     def __init__(self, actor, exptype, exptime, cams):
         self.doAbort = False
@@ -16,67 +15,88 @@ class Exposure(object):
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
-        self.obsdate = dt.utcnow()
 
-        self.smExp = [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
-
-    @property
-    def isCalib(self):
-        return self.exptype in ['bias', 'dark']
+        self.threads = self.instantiate(cams)
 
     @property
     def camExp(self):
-        return sum([smExp.camExp for smExp in self.smExp], [])
+        return sum([th.camExp for th in self.threads], [])
 
     @property
     def isFinished(self):
-        return all([smExp.isFinished for smExp in self.smExp])
+        return all([th.isFinished for th in self.threads])
 
     @property
-    def isIdle(self):
-        return any([camExp.state == 'idle' for camExp in self.camExp])
+    def cleared(self):
+        return all([camExp.state == 'cleared' for camExp in self.camExp])
+
+    @property
+    def aborted(self):
+        return self.cleared and self.doAbort
+
+    def instantiate(self, cams):
+        """ Create underlying SmExposure threads.  """
+        return [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
 
     def abort(self, cmd):
+        """ Abort current exposure. """
         self.doAbort = True
-        for exp in self.smExp:
-            exp.abort(cmd)
+        for thread in self.threads:
+            thread.abort(cmd)
 
     def finish(self, cmd):
+        """ Finish current exposure. """
         self.doFinish = True
-        for exp in self.smExp:
-            exp.finish(cmd)
+        for thread in self.threads:
+            thread.finish(cmd)
 
     def start(self, cmd, visit):
-        """ Start all spectrograph module exposures """
-        for exp in self.smExp:
-            exp.expose(cmd, visit)
+        """ Start all spectrograph module exposures. """
+        for thread in self.threads:
+            thread.expose(cmd, visit)
 
     def exit(self):
-        """ Free up all resources """
-        for smExp in self.smExp:
-            smExp.exit()
-        delattr(self, 'smExp')
+        """ Free up all resources. """
+        for thread in self.threads:
+            thread.exit()
+
+        self.threads.clear()
 
     def store(self, cmd, visit):
-        """Store Exposure in sps_visit table in opdb database """
+        """Store Exposure in sps_visit table in opdb database. """
         try:
             opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
         except Exception as e:
             cmd.warn('text=%s' % self.actor.strTraceback(e))
 
+        frames = [camExp.store() for camExp in self.camExp]
+        return list(filter(None, frames))
+
+
+class Calib(Exposure):
+    """ Calib object. """
+
+    def __init__(self, *args, **kwargs):
+        Exposure.__init__(self, *args, **kwargs)
+
+    @property
+    def camExp(self):
+        return self.threads
+
+    def instantiate(self, cams):
+        """ Create underlying CcdExposure threads object. """
+        return [CcdExposure(self, cam) for cam in cams]
+
 
 class SmExposure(QThread):
-    """ Placeholder to handle spectograph module cmd threading """
+    """ Placeholder to handle spectograph module cmd threading. """
 
     def __init__(self, exp, smId, arms):
         self.exp = exp
-        self.exptype = exp.exptype
-        self.exptime = exp.exptime
         self.smId = smId
         self.arms = arms
         self.enu = f'enu_sm{smId}'
-        self.camExp = [CamExposure(self, arm) for arm in arms]
-        self.isFinished = False
+        self.camExp = [CcdExposure(exp, f'{arm}{smId}') for arm in arms]
 
         QThread.__init__(self, exp.actor, f'sm{smId}')
         self.start()
@@ -86,116 +106,100 @@ class SmExposure(QThread):
         return [camExp for camExp in self.camExp if not camExp.cleared]
 
     @property
-    def replies(self):
-        """check that CamExposure(s) are finished """
-        return None not in [camExp.cmdVar for camExp in self.runExp]
+    def isFinished(self):
+        return all(camExp.isFinished for camExp in self.camExp)
 
-    @property
-    def isIntegrating(self):
-        return any([camExp.state == 'integrating' for camExp in self.camExp])
+    def currently(self, state):
+        """ current camExp states  """
+        return [camExp.state == state for camExp in self.runExp]
 
     def getShutters(self):
-        """ Build argument to enu shutters expose cmd """
-        if self.exp.isCalib:
-            return None
+        """ Build argument to enu shutters expose cmd. """
         return '' if 'b' in self.arms else 'red'
 
     def wipe(self, cmd):
-        """ Wipe running CamExposure """
+        """ Wipe running CcdExposure and wait for integrating state. """
         for camExp in self.runExp:
-            camExp.cmdVar = None
-            camExp.wipe(cmd=cmd)
+            camExp.wipe(cmd)
+
+        while not all(self.currently(state='wiping')):
+            wait()
+
+        while not all(self.currently(state='integrating')):
+            wait()
+
+        if not self.runExp or self.exp.doAbort:
+            raise RuntimeError
 
     def integrate(self, cmd):
         """ Integrate for both calib and regular exposure """
-        exptime, dateobs = None, None
+        shutters = self.getShutters()
+        cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu, timeLim=self.exp.exptime + 30,
+                                         cmdStr=f'shutters expose {shutters}', exptime=self.exp.exptime)
 
-        if not self.exp.doAbort:
-            shutters = self.getShutters()
-            if shutters is not None:
-                cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu,
-                                                 cmdStr=f'shutters expose exptime={self.exptime} {shutters}',
-                                                 timeLim=self.exptime + 30)
+        if cmdVar.didFail:
+            raise RuntimeError
 
-                keys = cmdKeys(cmdVar)
-                exptime = float(keys['exptime'].values[0]) if not cmdVar.didFail else np.nan
-                if np.isnan(exptime):
-                    exptime = None
-                else:
-                    dateobs = dt.fromisoformat(keys['dateobs'].values[0])
-
-            else:
-                exptime = self.exptime
+        keys = cmdKeys(cmdVar)
+        exptime = float(keys['exptime'].values[0])
+        dateobs = dt.fromisoformat(keys['dateobs'].values[0])
 
         return exptime, dateobs
 
     def read(self, cmd, visit, exptime, dateobs):
-        """ Read running CamExposure """
+        """ Read running CcdExposure and wait for idle state. """
         for camExp in self.runExp:
-            camExp.cmdVar = None
-            camExp.read(cmd=cmd, visit=visit, exptime=exptime, dateobs=dateobs)
+            camExp.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
+
+        while not all(self.currently(state='idle')):
+            wait()
 
     @threaded
     def expose(self, cmd, visit):
-        """ Full exposure routine
-        exceptions are catched and handled under the cover
-        """
+        """ Full exposure routine, exceptions are catched and handled under the cover. """
+
         try:
-            self.wipe(cmd=cmd)
-            self.waitAndHandle(state='integrating')
+            self.wipe(cmd)
+            exptime, dateobs = self.integrate(cmd)
+            self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
-            exptime, dateobs = self.integrate(cmd=cmd)
+        except RuntimeError:
+            self.clear(cmd)
 
-            self.read(cmd=cmd, visit=visit, exptime=exptime, dateobs=dateobs)
-            self.waitAndHandle(state='idle')
-
-        except:
-            pass
-
-        finally:
-            self.isFinished = True
-
-    def waitAndHandle(self, state):
-        """ Wait for CamExposure to return cmdVar """
-        while not self.replies:
-            wait()
-
-        states = [camExp.state for camExp in self.camExp]
-
-        if state not in states and not self.exp.doAbort:
-            raise RuntimeError
+    def clear(self, cmd):
+        """ Clear all running CcdExposure. """
+        for camExp in self.runExp:
+            camExp.clear(cmd)
 
     def abort(self, cmd):
-        if self.isIntegrating and not self.exp.isCalib:
-            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr=f'exposure abort')
+        """ Command shutters to abort exposure. """
+        if any(self.currently(state='integrating')):
+            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure abort')
 
     def finish(self, cmd):
-        if self.isIntegrating and not self.exp.isCalib:
-            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr=f'exposure finish')
+        """ Command shutters to finish exposure. """
+        if any(self.currently(state='integrating')):
+            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure finish')
 
     def exit(self):
         """ Free up all resources """
         for camExp in self.camExp:
             camExp.exit()
 
-        delattr(self, 'camExp')
+        self.camExp.clear()
         QThread.exit(self)
 
 
-class CamExposure(QThread):
+class CcdExposure(QThread):
     """ Placeholder to handle ccdActor cmd threading """
 
-    def __init__(self, smExp, arm):
+    def __init__(self, exp, cam):
+        self.exp = exp
+        self.exptype = exp.exptype
+        self.ccd = f'ccd_{cam}'
 
-        self.exp = smExp.exp
-        self.exptype = smExp.exptype
-
-        self.smId = smExp.smId
-        self.ccd = f'ccd_{arm}{self.smId}'
-
-        self.cmdVar = None
+        self.readVar = None
         self.cleared = False
-        self.storable = False
 
         QThread.__init__(self, self.exp.actor, self.ccd)
         QThread.start(self)
@@ -204,91 +208,117 @@ class CamExposure(QThread):
     def state(self):
         if self.cleared:
             return 'cleared'
-        else:
-            return self.exp.actor.models[self.ccd].keyVarDict['exposureState'].getValue(doRaise=False)
 
-    @threaded
-    def wipe(self, cmd):
+        return self.exp.actor.models[self.ccd].keyVarDict['exposureState'].getValue(doRaise=False)
+
+    @property
+    def storable(self):
+        return self.readVar is not None
+
+    @property
+    def isFinished(self):
+        return self.cleared or self.storable
+
+    def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
         cmdVar = self.actor.safeCall(cmd, actor=self.ccd, cmdStr='wipe')
+        if cmdVar.didFail:
+            raise RuntimeError
 
-        if self.handleReply(cmd, cmdVar=cmdVar):
-            self.darktime = dt.utcnow()
+        return dt.utcnow()
 
-    @threaded
-    def read(self, cmd, visit, exptime, dateobs):
-        """ Send ccd read command and handle reply
-        wait for integration if calibExposure, store CamExposure
-        """
-        if dateobs is None and exptime is not None:
-            dateobs = self.integrate(exptime)
-
-        if dateobs is None:
-            self.clear(cmd)
-            return
-
+    def _read(self, cmd, visit, dateobs, exptime=None):
+        """ Send ccd read command and handle reply. """
         self.time_exp_start = dateobs
         self.time_exp_end = dt.utcnow()
-        self.exptime = exptime
 
-        darktime = (self.time_exp_end - self.darktime).total_seconds()
+        darktime = (self.time_exp_end - self.wiped).total_seconds()
+        exptime = darktime if exptime is None else exptime
 
         cmdVar = self.actor.safeCall(cmd, actor=self.ccd,
-                                     cmdStr=f'read {self.exptype} visit={visit} exptime={exptime} darktime={darktime} '
-                                            f'obstime={dateobs.isoformat()}')
+                                     cmdStr=f'read {self.exptype}', visit=visit, exptime=round(exptime, 3),
+                                     darktime=round(darktime, 3), obstime=dateobs.isoformat())
 
-        self.storable = self.handleReply(cmd, cmdVar=cmdVar)
-
-    def handleReply(self, cmd, cmdVar):
-        """ Clear ccd is command has failed """
         if cmdVar.didFail:
-            self.clear(cmd)
-        else:
-            self.cmdVar = cmdVar
+            raise RuntimeError
 
-        return not cmdVar.didFail
+        self.readVar = cmdVar
+        return exptime
 
-    def clear(self, cmd):
-        """ Call ccdActor clearExposure command """
-        self.cmdVar = self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure')
-        self.cleared = True
-
-    def integrate(self, exptime):
+    def integrate(self):
         """ Integrate for exptime in seconds """
-        tlim = self.darktime + timedelta(seconds=exptime)
+        if self.exp.doAbort:
+            raise RuntimeError
+
+        tlim = self.wiped + timedelta(seconds=self.exp.exptime)
 
         while dt.utcnow() < tlim:
             if self.exp.doAbort:
-                return None
+                raise RuntimeError
             if self.exp.doFinish:
                 break
 
             wait()
 
-        return self.darktime
+        return self.wiped
 
-    def store(self, cmdVar=None):
-        """ Store in sps_exposure in opDB database """
-        cmdVar = self.cmdVar if cmdVar is None else cmdVar
-        keys = cmdKeys(cmdVar=cmdVar)
+    def clear(self, cmd):
+        """ Call ccdActor clearExposure command """
+        self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure')
+        self.cleared = True
+
+    @threaded
+    def expose(self, cmd, visit):
+        """ Full exposure routine for calib object. """
+        try:
+            self.wiped = self._wipe(cmd)
+            dateobs = self.integrate()
+            self.exptime = self._read(cmd, visit, dateobs)
+
+        except RuntimeError:
+            self.clear(cmd)
+
+    @threaded
+    def wipe(self, cmd):
+        """ Wipe in thread. """
+        try:
+            self.wiped = self._wipe(cmd)
+        except RuntimeError:
+            self.clear(cmd)
+
+    @threaded
+    def read(self, cmd, visit, dateobs, exptime):
+        """ Read in thread. """
+        try:
+            self.exptime = self._read(cmd, visit, dateobs, exptime)
+        except RuntimeError:
+            self.clear(cmd)
+
+    def store(self):
+        """ Store in sps_exposure in opDB database. """
+        if not self.storable:
+            return
+
+        keys = cmdKeys(cmdVar=self.readVar)
         rootDir, dateDir, filename = keys['filepath'].values
 
-        visit, camera_id = describe(filename)
+        visit, camera_id, camStr = describe(filename)
 
         try:
             opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
                         time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
+            return camStr
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
 
-    def exit(self):
-        """Store in opDB before exiting"""
-        if self.storable:
-            self.store()
+    def abort(self, cmd):
+        """ Just a prototype. """
+        pass
 
-        QThread.exit(self)
+    def finish(self, cmd):
+        """ Just a prototype. """
+        pass
 
     def handleTimeout(self):
-        """| Is called when the thread is idle
-        """
+        """ Just a prototype. """
         pass

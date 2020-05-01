@@ -3,7 +3,8 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from spsActor.utils import singleShot
+from spsActor.Controllers.exposure import Calib, Exposure
+from spsActor.utils import singleShot, wait
 
 
 class ExposeCmd(object):
@@ -15,16 +16,16 @@ class ExposeCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a le   le argument, the parsed and typed command.
         #
-        self.name = "expose"
+        self.exp = None
         self.vocab = [
             ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('exposure', 'abort', self.abort),
-            ('exposure', 'finish', self.finish)
+            ('exposure', 'finish', self.finish),
         ]
 
         # Define typed command arguments for the above commands.
-        self.keys = keys.KeysDictionary("spsait_expose", (1, 1),
+        self.keys = keys.KeysDictionary("sps_expose", (1, 1),
                                         keys.Key("exptime", types.Float(), help="The exposure time"),
                                         keys.Key("cam", types.String(),
                                                  help='single camera to take exposure from'),
@@ -34,14 +35,6 @@ class ExposeCmd(object):
                                                  help='PFS visit id'),
                                         )
 
-    @property
-    def controller(self):
-        try:
-            return self.actor.controllers[self.name]
-        except KeyError:
-            raise RuntimeError('%s controller is not connected.' % self.name)
-
-    @singleShot
     def doExposure(self, cmd):
         cmdKeys = cmd.cmd.keywords
 
@@ -58,28 +51,54 @@ class ExposeCmd(object):
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
         models = [f'ccd_{cam}' for cam in cams] + list(set([f'enu_sm{i}' for i in [int(cam[-1]) for cam in cams]]))
+
         self.actor.requireModels(models, cmd=cmd)
+        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams)
 
-        self.controller.expose(cmd=cmd,
-                               exptype=exptype,
-                               exptime=float(exptime),
-                               visit=int(visit),
-                               cams=cams)
+    @singleShot
+    def process(self, cmd, visit, exptype, **kwargs):
+        """Process exposure in another thread """
+        if self.exp is not None:
+            cmd.fail('text="exposure already ongoing"')
+            return
 
-        cmd.finish('visit=%d' % visit)
+        cls = Calib if exptype in ['bias', 'dark'] else Exposure
+        self.exp = cls(self.actor, exptype=exptype, **kwargs)
+
+        try:
+            self.exp.start(cmd, visit)
+
+            while not self.exp.isFinished:
+                wait()
+
+            if self.exp.aborted:
+                raise RuntimeError('exposure aborted')
+
+            if self.exp.cleared:
+                raise RuntimeError('exposure failed')
+
+            frames = self.exp.store(cmd, visit)
+            cmd.inform(f'frames={",".join(frames)}')
+            cmd.finish(f'visit={visit}')
+
+        finally:
+            self.exp.exit()
+            self.exp = None
 
     def abort(self, cmd):
-        if self.controller.current is None:
-            cmd.fail('text="Exposure is not currently on going"')
+        """Abort current exposure."""
+        if self.exp is None:
+            cmd.fail('text="no exposure to abort"')
             return
 
-        self.controller.current.abort(cmd)
-        cmd.finish('text="exposure aborted"')
+        self.exp.abort(cmd)
+        cmd.finish()
 
     def finish(self, cmd):
-        if self.controller.current is None:
-            cmd.fail('text="Exposure is not currently on going"')
+        """Finish current exposure."""
+        if self.exp is None:
+            cmd.fail('text="no exposure to finish"')
             return
 
-        self.controller.current.finish(cmd)
+        self.exp.finish(cmd)
         cmd.finish('text="exposure finished"')
