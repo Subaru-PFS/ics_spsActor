@@ -232,12 +232,13 @@ class CcdExposure(QThread):
         self.time_exp_start = dateobs
         self.time_exp_end = dt.utcnow()
 
-        darktime = (self.time_exp_end - self.wiped).total_seconds()
+        darktime = round((self.time_exp_end - self.wiped).total_seconds(), 3)
         exptime = darktime if exptime is None else exptime
+        exptime = round(exptime, 3)
 
         cmdVar = self.actor.safeCall(cmd, actor=self.ccd,
-                                     cmdStr=f'read {self.exptype}', visit=visit, exptime=round(exptime, 3),
-                                     darktime=round(darktime, 3), obstime=dateobs.isoformat())
+                                     cmdStr=f'read {self.exptype}', visit=visit, exptime=exptime, darktime=darktime,
+                                     obstime=dateobs.isoformat())
 
         if cmdVar.didFail:
             raise RuntimeError
