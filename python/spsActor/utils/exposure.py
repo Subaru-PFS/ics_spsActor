@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from actorcore.QThread import QThread
 from pfs.utils.opdb import opDB
-from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe
+from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe, fromisoformat
 
 
 class Exposure(object):
@@ -142,7 +142,7 @@ class SmExposure(QThread):
 
         keys = cmdKeys(cmdVar)
         exptime = float(keys['exptime'].values[0])
-        dateobs = dt.fromisoformat(keys['dateobs'].values[0])
+        dateobs = fromisoformat(keys['dateobs'].values[0])
 
         return exptime, dateobs
 

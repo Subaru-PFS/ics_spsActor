@@ -4,6 +4,10 @@ from functools import partial
 
 from actorcore.QThread import QThread
 from pfscore.spectroIds import SpectroIds
+from datetime import datetime as dt
+
+def fromisoformat(date, fmt='%Y-%m-%dT%H:%M:%S.%f'):
+    return dt.strptime(date, fmt)
 
 
 def armStr(armNum):
