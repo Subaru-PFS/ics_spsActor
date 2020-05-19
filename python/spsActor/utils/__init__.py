@@ -1,40 +1,24 @@
-import os
 import time
+from datetime import datetime as dt
 from functools import partial
 
 from actorcore.QThread import QThread
-from pfscore.spectroIds import SpectroIds
-from datetime import datetime as dt
+from pfs.utils.spectroIds import SpectroIds
+
 
 def fromisoformat(date, fmt='%Y-%m-%dT%H:%M:%S.%f'):
     return dt.strptime(date, fmt)
 
 
-def armStr(armNum):
-    return dict([(v, k) for k, v in SpectroIds.validArms.items()])[armNum]
+def getMask(frames):
+    mask = 0
+    cams = [SpectroIds(f'{arm}{specNum}') for arm in SpectroIds.validArms for specNum in SpectroIds.validModules]
 
+    for cam in cams:
+        bit = cam.camId - 1
+        mask |= (1 << bit if cam.camName in frames else 0)
 
-def describe(filename):
-    exposureId = os.path.splitext(filename)[0]
-    if len(exposureId) != 12:
-        raise ValueError(f'Invalid exposureId : {exposureId}')
-
-    visit = int(exposureId[4:10])
-    specId = int(exposureId[10])
-    armNum = int(exposureId[11])
-
-    return visit, cameraId(specId, armNum), f'{armStr(armNum)}{specId}'
-
-
-def cameraId(specId, arm):
-    if arm in SpectroIds.validArms.keys():
-        armNum = SpectroIds.validArms[arm]
-    elif arm in SpectroIds.validArms.values():
-        armNum = arm
-    else:
-        raise ValueError(f'Invalid arm : {arm}')
-
-    return (specId - 1) * 4 + armNum
+    return mask
 
 
 def camPerSpec(cams):

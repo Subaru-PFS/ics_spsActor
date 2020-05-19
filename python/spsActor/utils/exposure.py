@@ -3,7 +3,8 @@ from datetime import timedelta
 
 from actorcore.QThread import QThread
 from pfs.utils.opdb import opDB
-from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, describe, fromisoformat
+from pfs.utils.spectroIds import SpectroIds
+from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, fromisoformat
 
 
 class Exposure(object):
@@ -301,14 +302,13 @@ class CcdExposure(QThread):
             return
 
         keys = cmdKeys(cmdVar=self.readVar)
-        rootDir, dateDir, filename = keys['filepath'].values
-
-        visit, camera_id, camStr = describe(filename)
+        camStr, dateDir, visit, specNum, armNum = keys['spsFileIds'].values
+        cam = SpectroIds.fromNum(specNum=specNum, armNum=armNum)
 
         try:
-            opDB.insert('sps_exposure', pfs_visit_id=visit, sps_camera_id=camera_id, exptime=self.exptime,
+            opDB.insert('sps_exposure', pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
                         time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
-            return camStr
+            return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
 
