@@ -3,22 +3,10 @@ from datetime import datetime as dt
 from functools import partial
 
 from actorcore.QThread import QThread
-from pfs.utils.spectroIds import SpectroIds
 
 
 def fromisoformat(date, fmt='%Y-%m-%dT%H:%M:%S.%f'):
     return dt.strptime(date, fmt)
-
-
-def getMask(frames):
-    mask = 0
-    cams = [SpectroIds(f'{arm}{specNum}') for arm in SpectroIds.validArms for specNum in SpectroIds.validModules]
-
-    for cam in cams:
-        bit = cam.camId - 1
-        mask |= (1 << bit if cam.camName in frames else 0)
-
-    return mask
 
 
 def camPerSpec(cams):

@@ -303,7 +303,7 @@ class CcdExposure(QThread):
 
         keys = cmdKeys(cmdVar=self.readVar)
         camStr, dateDir, visit, specNum, armNum = keys['spsFileIds'].values
-        cam = SpectroIds.fromNum(specNum=specNum, armNum=armNum)
+        cam = self.actor.specFromNum(specNum=specNum, armNum=armNum)
 
         try:
             opDB.insert('sps_exposure', pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,

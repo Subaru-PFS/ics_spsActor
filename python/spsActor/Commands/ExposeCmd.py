@@ -4,7 +4,7 @@
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from opscore.utility.qstr import qstr
-from spsActor.utils import singleShot, wait, getMask
+from spsActor.utils import singleShot, wait
 from spsActor.utils.exposure import Calib, Exposure
 
 
@@ -79,7 +79,7 @@ class ExposeCmd(object):
                 raise RuntimeError('exposure failed')
 
             frames = self.exp.store(cmd, visit)
-            cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{getMask(frames):04x}""")
+            cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}""")
 
         finally:
             self.exp.exit()
