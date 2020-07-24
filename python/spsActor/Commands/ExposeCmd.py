@@ -19,7 +19,7 @@ class ExposeCmd(object):
         #
         self.exp = None
         self.vocab = [
-            ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>]', self.doExposure),
+            ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>] [@doLamps]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('exposure', 'abort', self.abort),
             ('exposure', 'finish', self.finish),
@@ -53,8 +53,10 @@ class ExposeCmd(object):
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
         models = [f'ccd_{cam}' for cam in cams] + list(set([f'enu_sm{i}' for i in [int(cam[-1]) for cam in cams]]))
 
+        doLamps = 'doLamps' in cmdKeys
+
         self.actor.requireModels(models, cmd=cmd)
-        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams)
+        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps)
 
     @singleShot
     def process(self, cmd, visit, exptype, **kwargs):
