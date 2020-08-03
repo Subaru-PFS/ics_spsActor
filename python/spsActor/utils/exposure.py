@@ -55,7 +55,7 @@ class Exposure(object):
     def start(self, cmd, visit):
         """ Start all spectrograph module exposures. """
         for thread in self.threads:
-            thread.expose(cmd, visit)
+            thread.expose(cmd, visit, doLamps=self.doLamps)
 
     def exit(self):
         """ Free up all resources. """
@@ -137,10 +137,11 @@ class SmExposure(QThread):
         """ Integrate for both calib and regular exposure """
 
         if doLamps:
+            cmd.debug(f'text="adjusting exposure for lamp control... "')
             shutterTime = self.exp.exptime + 4
             lampq = self.actor.cmdr.cmdq(actor='dcb',
-                                         cmdStr=f'go delay=2',
-                                         timeLim=shutterTime+10,
+                                         cmdStr=f'sources go delay=2',
+                                         timeLim=shutterTime+5,
                                          forUserCmd=cmd)
         else:
             shutterTime = self.exp.exptime
@@ -155,8 +156,10 @@ class SmExposure(QThread):
         keys = cmdKeys(cmdVar)
 
         if doLamps:
-            lampCmdVar = lampq.get()
-            if lampCmdVar.didFail():
+            cmd.debug(f'text="closing out lamp control... "')
+            lampsCmdVar = lampq.get()
+            cmd.debug(f'text=" cmdVar={type(lampsCmdVar)},{lampsCmdVar},{lampsCmdVar.didFail} "')
+            if lampsCmdVar.didFail:
                 raise RuntimeError(f'failed to control lamps: {lampsCmdVar}')
             exptime = self.exp.exptime
         else:
@@ -183,7 +186,8 @@ class SmExposure(QThread):
             exptime, dateobs = self.integrate(cmd, doLamps=doLamps)
             self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
-        except RuntimeError:
+        except RuntimeError as e:
+            cmd.warn(f'text="expose failed: {e}"')
             self.clear(cmd)
 
     def clear(self, cmd):
@@ -289,14 +293,15 @@ class CcdExposure(QThread):
         self.cleared = True
 
     @threaded
-    def expose(self, cmd, visit):
+    def expose(self, cmd, visit, doLamps=False):
         """ Full exposure routine for calib object. """
         try:
             self.wiped = self._wipe(cmd)
             dateobs = self.integrate()
             self.exptime = self._read(cmd, visit, dateobs)
 
-        except RuntimeError:
+        except RuntimeError as e:
+            cmd.warn(f'text="expose failed with: {e}"')
             self.clear(cmd)
 
     @threaded

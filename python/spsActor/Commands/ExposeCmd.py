@@ -1,12 +1,14 @@
 #!/usr/bin/env python
 
+from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from opscore.utility.qstr import qstr
 from spsActor.utils import singleShot, wait
-from spsActor.utils.exposure import Calib, Exposure
+from spsActor.utils import exposure
 
+reload(exposure)
 
 class ExposeCmd(object):
     def __init__(self, actor):
@@ -19,7 +21,7 @@ class ExposeCmd(object):
         #
         self.exp = None
         self.vocab = [
-            ('expose', '[@(object|arc|flat|dark)] <exptime> [<visit>] [<cam>] [<cams>] [@doLamps]', self.doExposure),
+            ('expose', '@(object|arc|flat|dark) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('exposure', 'abort', self.abort),
             ('exposure', 'finish', self.finish),
@@ -65,7 +67,7 @@ class ExposeCmd(object):
             cmd.fail('text="exposure already ongoing"')
             return
 
-        cls = Calib if exptype in ['bias', 'dark'] else Exposure
+        cls = exposure.Calib if exptype in ['bias', 'dark'] else exposure.Exposure
         self.exp = cls(self.actor, exptype=exptype, **kwargs)
 
         try:
