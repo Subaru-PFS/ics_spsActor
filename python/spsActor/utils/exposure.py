@@ -10,12 +10,13 @@ from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, fromisoformat
 class Exposure(object):
     """ Exposure object. """
 
-    def __init__(self, actor, exptype, exptime, cams):
+    def __init__(self, actor, exptype, exptime, cams, doLamps=False):
         self.doAbort = False
         self.doFinish = False
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
+        self.doLamps = doLamps
 
         self.threads = self.instantiate(cams)
 
@@ -54,7 +55,7 @@ class Exposure(object):
     def start(self, cmd, visit):
         """ Start all spectrograph module exposures. """
         for thread in self.threads:
-            thread.expose(cmd, visit)
+            thread.expose(cmd, visit, doLamps=self.doLamps)
 
     def exit(self):
         """ Free up all resources. """
@@ -132,17 +133,37 @@ class SmExposure(QThread):
         if not self.runExp or self.exp.doAbort:
             raise RuntimeError
 
-    def integrate(self, cmd):
+    def integrate(self, cmd, doLamps=False):
         """ Integrate for both calib and regular exposure """
+
+        if doLamps:
+            cmd.debug(f'text="adjusting exposure for lamp control... "')
+            shutterTime = self.exp.exptime + 4
+            lampq = self.actor.cmdr.cmdq(actor='dcb',
+                                         cmdStr=f'sources go delay=2',
+                                         timeLim=shutterTime+5,
+                                         forUserCmd=cmd)
+        else:
+            shutterTime = self.exp.exptime
+            lampq = None
+
         shutters = self.getShutters()
-        cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu, timeLim=self.exp.exptime + 30,
-                                         cmdStr=f'shutters expose {shutters}', exptime=self.exp.exptime)
+        cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu, timeLim=shutterTime + 30,
+                                         cmdStr=f'shutters expose {shutters}', exptime=shutterTime)
 
         if cmdVar.didFail:
-            raise RuntimeError
-
+            raise RuntimeError('failed to control shutters!')
         keys = cmdKeys(cmdVar)
-        exptime = float(keys['exptime'].values[0])
+
+        if doLamps:
+            cmd.debug(f'text="closing out lamp control... "')
+            lampsCmdVar = lampq.get()
+            cmd.debug(f'text=" cmdVar={type(lampsCmdVar)},{lampsCmdVar},{lampsCmdVar.didFail} "')
+            if lampsCmdVar.didFail:
+                raise RuntimeError(f'failed to control lamps: {lampsCmdVar}')
+            exptime = self.exp.exptime
+        else:
+            exptime = float(keys['exptime'].values[0])
         dateobs = fromisoformat(keys['dateobs'].values[0])
 
         return exptime, dateobs
@@ -156,15 +177,17 @@ class SmExposure(QThread):
             wait()
 
     @threaded
-    def expose(self, cmd, visit):
+    def expose(self, cmd, visit, doWipe=True, doLamps=False):
         """ Full exposure routine, exceptions are catched and handled under the cover. """
 
         try:
-            self.wipe(cmd)
-            exptime, dateobs = self.integrate(cmd)
+            if doWipe:
+                self.wipe(cmd)
+            exptime, dateobs = self.integrate(cmd, doLamps=doLamps)
             self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
-        except RuntimeError:
+        except RuntimeError as e:
+            cmd.warn(f'text="expose failed: {e}"')
             self.clear(cmd)
 
     def clear(self, cmd):
@@ -270,14 +293,15 @@ class CcdExposure(QThread):
         self.cleared = True
 
     @threaded
-    def expose(self, cmd, visit):
+    def expose(self, cmd, visit, doLamps=False):
         """ Full exposure routine for calib object. """
         try:
             self.wiped = self._wipe(cmd)
             dateobs = self.integrate()
             self.exptime = self._read(cmd, visit, dateobs)
 
-        except RuntimeError:
+        except RuntimeError as e:
+            cmd.warn(f'text="expose failed with: {e}"')
             self.clear(cmd)
 
     @threaded
