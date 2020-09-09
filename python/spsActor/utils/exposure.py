@@ -326,12 +326,14 @@ class CcdExposure(QThread):
             return
 
         keys = cmdKeys(cmdVar=self.readVar)
+        visit, beamConfigDate = keys['beamConfigDate'].values
         camStr, dateDir, visit, specNum, armNum = keys['spsFileIds'].values
         cam = self.actor.specFromNum(specNum=specNum, armNum=armNum)
 
         try:
             opDB.insert('sps_exposure', pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
-                        time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end)
+                        time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end,
+                        beam_config_date=float(beamConfigDate))
             return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
