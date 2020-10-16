@@ -22,6 +22,7 @@ class SyncCmd(object):
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
+            ('checkFocus', '[<cams>]', self.checkFocus),
         ]
 
         # Define typed command arguments for the above commands.
@@ -153,5 +154,23 @@ class SyncCmd(object):
         if not cams:
             cmd.fail('text="failed to command iis"')
             return
+
+        cmd.finish()
+
+    def checkFocus(self, cmd):
+        """ Focus multiple slits synchronously. """
+        cams = self.actor.cams
+        cmdKeys = cmd.cmd.keywords
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
+
+        specNums = list(set([int(cam[-1]) for cam in cams]))
+        models = [f'xcu_{cam}' for cam in cams] + [f'enu_sm{specNum}' for specNum in specNums]
+
+        self.actor.requireModels(models, cmd=cmd)
+
+        for specNum in specNums:
+            slitPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['slitPosition'].valueList[0]
+            if slitPosition != 'home':
+                raise ValueError(f'sm{specNum} slit is not focused')
 
         cmd.finish()
