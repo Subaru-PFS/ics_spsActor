@@ -34,4 +34,5 @@ class TopCmd(object):
 
         cmd.inform('text="Present!"')
         self.actor.sendVersionKey(cmd)
+        self.actor.spsConfig(cmd)
         cmd.finish()

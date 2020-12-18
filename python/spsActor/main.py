@@ -5,7 +5,7 @@ import logging
 import time
 
 import actorcore.ICC
-from pfs.utils.spectroIds import SpectroIds
+from pfs.utils.spectroIds import SpectroIds, SpecModule
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils import parse
 
@@ -66,6 +66,14 @@ class SpsActor(actorcore.ICC.ICC):
             mask |= (1 << bit if cam.camName in frames else 0)
 
         return mask
+
+    def spsConfig(self, cmd):
+        allModules = [SpecModule.fromConfig(f'sm{specNum}', self.config) for specNum in SpectroIds.validModules]
+        spsConfig = [specModule for specModule in allModules if specModule.parts]
+
+        cmd.inform(f"""spsConfig={','.join([specModule.specName for specModule in spsConfig])}""")
+        for specModule in spsConfig:
+            cmd.inform(specModule)
 
     def connectionMade(self):
         if self.everConnected is False:
