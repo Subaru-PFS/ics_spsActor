@@ -5,10 +5,11 @@ import logging
 import time
 
 import actorcore.ICC
-from pfs.utils.spectroIds import SpectroIds, SpecModule
+from pfs.utils.spectroIds import SpectroIds
+from pfs.utils.spsConfig import SpecModule, SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils import parse
-
+from pfs.utils.instdata import InstData
 
 class SpsActor(actorcore.ICC.ICC):
     validCams = [SpectroIds(f'{arm}{specNum}') for arm in SpectroIds.validArms for specNum in SpectroIds.validModules]
@@ -24,6 +25,7 @@ class SpsActor(actorcore.ICC.ICC):
 
         self.logger.setLevel(logLevel)
         self.everConnected = False
+        self.instData = InstData(self)
 
     @property
     def cams(self):
@@ -67,13 +69,13 @@ class SpsActor(actorcore.ICC.ICC):
 
         return mask
 
-    def spsConfig(self, cmd):
-        allModules = [SpecModule.fromConfig(f'sm{specNum}', self.config) for specNum in SpectroIds.validModules]
-        spsConfig = [specModule for specModule in allModules if specModule.parts]
+    def genSpsKeys(self, cmd):
+        spsConfig = SpsConfig.fromConfig(self)
 
-        cmd.inform(f"""spsConfig={','.join([specModule.specName for specModule in spsConfig])}""")
-        for specModule in spsConfig:
-            cmd.inform(specModule)
+        cmd.inform(f"""spsConfig={','.join(spsConfig.keys())}""")
+        for specModule in spsConfig.values():
+            cmd.inform(specModule.genSpecParts)
+            cmd.inform(specModule.genLightSource)
 
     def connectionMade(self):
         if self.everConnected is False:
