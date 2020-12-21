@@ -3,7 +3,8 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from pfs.utils.spectroIds import SpectroIds, SpecModule, SpsConfig
+from pfs.utils.spectroIds import SpectroIds
+from pfs.utils.spsConfig import SpecModule, SpsConfig
 
 
 class TopCmd(object):

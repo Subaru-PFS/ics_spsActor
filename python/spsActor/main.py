@@ -5,7 +5,8 @@ import logging
 import time
 
 import actorcore.ICC
-from pfs.utils.spectroIds import SpectroIds, SpecModule, SpsConfig
+from pfs.utils.spectroIds import SpectroIds
+from pfs.utils.spsConfig import SpecModule, SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils import parse
 from pfs.utils.instdata import InstData
