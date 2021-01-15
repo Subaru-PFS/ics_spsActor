@@ -19,12 +19,12 @@ class ExposeCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a le   le argument, the parsed and typed command.
         #
-        self.exp = None
+        self.exp = dict()
         self.vocab = [
             ('expose', '@(object|arc|flat|dark) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
-            ('exposure', 'abort', self.abort),
-            ('exposure', 'finish', self.finish),
+            ('exposure', 'abort <visit>', self.abort),
+            ('exposure', 'finish <visit>', self.finish),
         ]
 
         # Define typed command arguments for the above commands.
@@ -63,46 +63,54 @@ class ExposeCmd(object):
     @singleShot
     def process(self, cmd, visit, exptype, **kwargs):
         """Process exposure in another thread """
-        if self.exp is not None:
-            cmd.fail('text="exposure already ongoing"')
+        if visit in self.exp.keys():
+            cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
 
         cls = exposure.Calib if exptype in ['bias', 'dark'] else exposure.Exposure
-        self.exp = cls(self.actor, exptype=exptype, **kwargs)
+        exp = cls(self.actor, exptype=exptype, **kwargs)
+        self.exp[visit] = exp
+
 
         try:
-            self.exp.start(cmd, visit)
+            exp.start(cmd, visit)
 
-            while not self.exp.isFinished:
+            while not exp.isFinished:
                 wait()
 
-            if self.exp.aborted:
+            if exp.aborted:
                 raise RuntimeError('exposure aborted')
 
-            if self.exp.cleared:
+            if exp.cleared:
                 raise RuntimeError('exposure failed')
 
-            frames = self.exp.store(cmd, visit)
+            frames = exp.store(cmd, visit)
             cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}""")
 
         finally:
-            self.exp.exit()
-            self.exp = None
+            exp.exit()
+            self.exp.pop(visit, None)
 
     def abort(self, cmd):
         """Abort current exposure."""
-        if self.exp is None:
+        cmdKeys = cmd.cmd.keywords
+        visit = cmdKeys['visit'].values[0]
+
+        if self.exp[visit] is None:
             cmd.fail('text="no exposure to abort"')
             return
 
-        self.exp.abort(cmd)
+        self.exp[visit].abort(cmd)
         cmd.finish()
 
     def finish(self, cmd):
         """Finish current exposure."""
-        if self.exp is None:
-            cmd.fail('text="no exposure to finish"')
+        cmdKeys = cmd.cmd.keywords
+        visit = cmdKeys['visit'].values[0]
+
+        if self.exp[visit] is None:
+            cmd.fail('text="no exposure to abort"')
             return
 
-        self.exp.finish(cmd)
-        cmd.finish('text="exposure finished"')
+        self.exp[visit].finish(cmd)
+        cmd.finish('text="exposure finalizing now..."')
