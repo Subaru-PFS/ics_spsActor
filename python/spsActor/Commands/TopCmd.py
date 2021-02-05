@@ -4,7 +4,7 @@
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from pfs.utils.spectroIds import SpectroIds
-from pfs.utils.spsConfig import SpecModule, SpsConfig
+from pfs.utils.sps.config import SpecModule, SpsConfig
 
 
 class TopCmd(object):
@@ -44,6 +44,7 @@ class TopCmd(object):
         cmd.inform('text="Present!"')
         self.actor.sendVersionKey(cmd)
         self.actor.genSpsKeys(cmd)
+
         cmd.finish()
 
     def declareLightSource(self, cmd):
@@ -57,16 +58,11 @@ class TopCmd(object):
                 lightSource = cmdKeys[f'sm{specNum}'].values[0].strip().lower()
             except KeyError:
                 continue
-            [specModule] = spsConfig.selectModules([specNum])
-            specModule.declareLightSource(lightSource, spsData=self.actor.instData)
+            spsConfig.declareLightSource(lightSource, specNum=specNum, spsData=self.actor.instData)
 
         if not lightSource:
             [lightSource] = [source for source in SpecModule.lightSources if source in cmdKeys]
-            if len(spsConfig) > 1 and lightSource != 'pfi':
-                raise RuntimeError(f'{lightSource} can only be plugged to a single SM')
-
-            for specModule in spsConfig.values():
-                specModule.declareLightSource(lightSource, spsData=self.actor.instData)
+            spsConfig.declareLightSource(lightSource, spsData=self.actor.instData)
 
         self.actor.genSpsKeys(cmd)
         cmd.finish()

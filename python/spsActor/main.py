@@ -6,7 +6,7 @@ import time
 
 import actorcore.ICC
 from pfs.utils.spectroIds import SpectroIds
-from pfs.utils.spsConfig import SpecModule, SpsConfig
+from pfs.utils.sps.config import SpecModule, SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils import parse
 from pfs.utils.instdata import InstData
@@ -72,8 +72,9 @@ class SpsActor(actorcore.ICC.ICC):
     def genSpsKeys(self, cmd):
         spsConfig = SpsConfig.fromConfig(self)
 
-        cmd.inform(f"""spsConfig={','.join(spsConfig.keys())}""")
-        for specModule in spsConfig.values():
+        cmd.inform(f"""specModules={','.join(spsConfig.specModules.keys())}""")
+        cmd.inform(f"""spsModules={','.join(spsConfig.spsModules.keys())}""")
+        for specModule in spsConfig.specModules.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
 
