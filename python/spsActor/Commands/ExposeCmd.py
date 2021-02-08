@@ -5,10 +5,11 @@ from importlib import reload
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from opscore.utility.qstr import qstr
-from spsActor.utils import singleShot, wait
 from spsActor.utils import exposure
+from spsActor.utils import singleShot, wait
 
 reload(exposure)
+
 
 class ExposeCmd(object):
     def __init__(self, actor):
@@ -71,18 +72,17 @@ class ExposeCmd(object):
         exp = cls(self.actor, exptype=exptype, **kwargs)
         self.exp[visit] = exp
 
-
         try:
             exp.start(cmd, visit)
 
             while not exp.isFinished:
                 wait()
 
-            if exp.aborted:
-                raise RuntimeError('exposure aborted')
-
             if exp.cleared:
-                raise RuntimeError('exposure failed')
+                if exp.aborted:
+                    raise RuntimeError('abort exposure requested...')
+                else:
+                    raise RuntimeError('exposure failed...')
 
             frames = exp.store(cmd, visit)
             cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}""")
@@ -96,21 +96,25 @@ class ExposeCmd(object):
         cmdKeys = cmd.cmd.keywords
         visit = cmdKeys['visit'].values[0]
 
-        if self.exp[visit] is None:
-            cmd.fail('text="no exposure to abort"')
+        try:
+            exposure = self.exp[visit]
+        except KeyError:
+            cmd.fail(f'text="visit:{visit} is not ongoing, valids:{",".join(map(str, self.exp.keys()))} "')
             return
 
-        self.exp[visit].abort(cmd)
-        cmd.finish()
+        exposure.abort(cmd)
+        cmd.finish('text="aborting exposure now !"')
 
     def finish(self, cmd):
         """Finish current exposure."""
         cmdKeys = cmd.cmd.keywords
         visit = cmdKeys['visit'].values[0]
 
-        if self.exp[visit] is None:
-            cmd.fail('text="no exposure to abort"')
+        try:
+            exposure = self.exp[visit]
+        except KeyError:
+            cmd.fail(f'text="visit:{visit} is not ongoing, valids:{",".join(map(str, self.exp.keys()))} "')
             return
 
-        self.exp[visit].finish(cmd)
+        exposure.finish(cmd)
         cmd.finish('text="exposure finalizing now..."')
