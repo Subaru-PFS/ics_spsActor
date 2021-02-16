@@ -7,6 +7,32 @@ from opdb import utils, opdb
 from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, fromisoformat
 
 
+class ClearExposureASAP(Exception):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP.
+
+    Attributes
+    ----------
+    text : `str`
+       Exception text.
+    """
+
+    def __init__(self, text=""):
+        Exception.__init__(self, text)
+
+
+class DeadExposure(Exception):
+    """Exception raised when an exposure has failed and already cleared out.
+
+    Attributes
+    ----------
+    text : `str`
+       Exception text.
+    """
+
+    def __init__(self, text):
+        Exception.__init__(self, text)
+
+
 class Exposure(object):
     """ Exposure object. """
 
@@ -121,7 +147,9 @@ class SmExposure(QThread):
         return '' if 'b' in self.arms else 'red'
 
     def wipe(self, cmd):
-        """ Wipe running CcdExposure and wait for integrating state. """
+        """ Wipe running CcdExposure and wait for integrating state.
+        doFinish==doAbort at the beginning of integration.
+        """
         for camExp in self.runExp:
             camExp.wipe(cmd)
 
@@ -131,8 +159,12 @@ class SmExposure(QThread):
         while not all(self.currently(state='integrating')):
             wait()
 
-        if not self.runExp or self.exp.doAbort:
-            raise RuntimeError
+        if self.exp.doAbort or self.exp.doFinish:
+            self.exp.doAbort = True
+            raise ClearExposureASAP('dont even need to go further...')
+
+        if not self.runExp:
+            raise DeadExposure('all exposure are dead and cleared...')
 
     def integrate(self, cmd, doLamps=False):
         """ Integrate for both calib and regular exposure """
@@ -152,8 +184,9 @@ class SmExposure(QThread):
         cmdVar = self.exp.actor.safeCall(cmd, actor=self.enu, timeLim=shutterTime + 30,
                                          cmdStr=f'shutters expose {shutters}', exptime=shutterTime)
 
-        if cmdVar.didFail:
-            raise RuntimeError('failed to control shutters!')
+        if cmdVar.didFail or self.exp.doAbort:
+            raise ClearExposureASAP
+
         keys = cmdKeys(cmdVar)
 
         if doLamps:
@@ -161,7 +194,7 @@ class SmExposure(QThread):
             lampsCmdVar = lampq.get()
             cmd.debug(f'text=" cmdVar={type(lampsCmdVar)},{lampsCmdVar},{lampsCmdVar.didFail} "')
             if lampsCmdVar.didFail:
-                raise RuntimeError(f'failed to control lamps: {lampsCmdVar}')
+                raise ClearExposureASAP(f'failed to control lamps: {lampsCmdVar}')
             exptime = self.exp.exptime
         else:
             exptime = float(keys['exptime'].values[0])
@@ -177,6 +210,9 @@ class SmExposure(QThread):
         while not all(self.currently(state='idle')):
             wait()
 
+        if not self.runExp:
+            raise DeadExposure
+
     @threaded
     def expose(self, cmd, visit, doWipe=True, doLamps=False):
         """ Full exposure routine, exceptions are catched and handled under the cover. """
@@ -187,19 +223,18 @@ class SmExposure(QThread):
             exptime, dateobs = self.integrate(cmd, doLamps=doLamps)
             self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
-        except RuntimeError as e:
-            cmd.warn(f'text="expose failed: {e}"')
-            self.clear(cmd)
+        except (DeadExposure, ClearExposureASAP):
+            self.clearExposure(cmd)
 
-    def clear(self, cmd):
+    def clearExposure(self, cmd):
         """ Clear all running CcdExposure. """
         for camExp in self.runExp:
-            camExp.clear(cmd)
+            camExp.clearExposure(cmd)
 
     def abort(self, cmd):
         """ Command shutters to abort exposure. """
         if any(self.currently(state='integrating')):
-            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure abort')
+            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure finish')
 
     def finish(self, cmd):
         """ Command shutters to finish exposure. """
@@ -248,7 +283,7 @@ class CcdExposure(QThread):
         """ Send ccd wipe command and handle reply """
         cmdVar = self.actor.safeCall(cmd, actor=self.ccd, cmdStr='wipe')
         if cmdVar.didFail:
-            raise RuntimeError
+            raise ClearExposureASAP
 
         return dt.utcnow()
 
@@ -266,21 +301,22 @@ class CcdExposure(QThread):
                                      obstime=dateobs.isoformat())
 
         if cmdVar.didFail:
-            raise RuntimeError
+            raise ClearExposureASAP
 
         self.readVar = cmdVar
         return exptime
 
     def integrate(self):
-        """ Integrate for exptime in seconds """
-        if self.exp.doAbort:
-            raise RuntimeError
+        """ Integrate for exptime in seconds, doFinish==doAbort at the beginning of integration. """
+        if self.exp.doAbort or self.exp.doFinish:
+            self.exp.doAbort = True
+            raise ClearExposureASAP
 
         tlim = self.wiped + timedelta(seconds=self.exp.exptime)
 
         while dt.utcnow() < tlim:
             if self.exp.doAbort:
-                raise RuntimeError
+                raise ClearExposureASAP
             if self.exp.doFinish:
                 break
 
@@ -288,10 +324,11 @@ class CcdExposure(QThread):
 
         return self.wiped
 
-    def clear(self, cmd):
+    def clearExposure(self, cmd):
         """ Call ccdActor clearExposure command """
-        self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure')
-        self.cleared = True
+        if not self.cleared:
+            self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure')
+            self.cleared = True
 
     @threaded
     def expose(self, cmd, visit, doLamps=False):
@@ -301,25 +338,24 @@ class CcdExposure(QThread):
             dateobs = self.integrate()
             self.exptime = self._read(cmd, visit, dateobs)
 
-        except RuntimeError as e:
-            cmd.warn(f'text="expose failed with: {e}"')
-            self.clear(cmd)
+        except (DeadExposure, ClearExposureASAP):
+            self.clearExposure(cmd)
 
     @threaded
     def wipe(self, cmd):
         """ Wipe in thread. """
         try:
             self.wiped = self._wipe(cmd)
-        except RuntimeError:
-            self.clear(cmd)
+        except ClearExposureASAP:
+            self.clearExposure(cmd)
 
     @threaded
     def read(self, cmd, visit, dateobs, exptime):
         """ Read in thread. """
         try:
             self.exptime = self._read(cmd, visit, dateobs, exptime)
-        except RuntimeError:
-            self.clear(cmd)
+        except ClearExposureASAP:
+            self.clearExposure(cmd)
 
     def store(self):
         """ Store in sps_exposure in opDB database. """
