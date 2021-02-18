@@ -26,6 +26,7 @@ class ExposeCmd(object):
             ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
+            ('exposure', 'status', self.status)
         ]
 
         # Define typed command arguments for the above commands.
@@ -118,3 +119,9 @@ class ExposeCmd(object):
 
         exposure.finish(cmd)
         cmd.finish('text="exposure finalizing now..."')
+
+    def status(self, cmd):
+        for visit, exp in self.exp.items():
+            cmd.inform(f'text="Exposure(visit={visit} exptype={exp.exptype} exptime={exp.exptime}"')
+
+        cmd.finish()
