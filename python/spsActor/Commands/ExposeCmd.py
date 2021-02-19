@@ -12,6 +12,8 @@ reload(exposure)
 
 
 class ExposeCmd(object):
+    expTypes = ['bias', 'dark', 'object', 'arc', 'flat']
+
     def __init__(self, actor):
         # This lets us access the rest of the actor.
         self.actor = actor
@@ -20,10 +22,12 @@ class ExposeCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a le   le argument, the parsed and typed command.
         #
+        exptypes = "|".join(ExposeCmd.expTypes[1:])
         self.exp = dict()
+
         self.vocab = [
-            ('expose', '@(object|arc|flat|dark) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps]', self.doExposure),
-            ('expose', 'bias [<visit>] [<cam>] [<cams>]', self.doExposure),
+            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doTest]', self.doExposure),
+            ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
             ('exposure', 'status', self.status)
@@ -43,11 +47,10 @@ class ExposeCmd(object):
     def doExposure(self, cmd):
         cmdKeys = cmd.cmd.keywords
 
-        exptype = 'object'
-        exptype = 'arc' if 'arc' in cmdKeys else exptype
-        exptype = 'flat' if 'flat' in cmdKeys else exptype
-        exptype = 'bias' if 'bias' in cmdKeys else exptype
-        exptype = 'dark' if 'dark' in cmdKeys else exptype
+        exptype = None
+
+        for valid in ExposeCmd.expTypes:
+            exptype = valid if valid in cmdKeys else exptype
 
         exptime = cmdKeys['exptime'].values[0] if exptype is not 'bias' else 0
         visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
@@ -58,9 +61,10 @@ class ExposeCmd(object):
         models = [f'ccd_{cam}' for cam in cams] + list(set([f'enu_sm{i}' for i in [int(cam[-1]) for cam in cams]]))
 
         doLamps = 'doLamps' in cmdKeys
+        doTest = 'doTest' in cmdKeys
 
         self.actor.requireModels(models, cmd=cmd)
-        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps)
+        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doTest=doTest)
 
     @singleShot
     def process(self, cmd, visit, exptype, **kwargs):
