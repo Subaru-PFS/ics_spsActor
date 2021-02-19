@@ -29,7 +29,7 @@ class DeadExposure(Exception):
        Exception text.
     """
 
-    def __init__(self, text):
+    def __init__(self, text=""):
         Exception.__init__(self, text)
 
 
