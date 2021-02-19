@@ -36,7 +36,8 @@ class DeadExposure(Exception):
 class Exposure(object):
     """ Exposure object. """
 
-    def __init__(self, actor, exptype, exptime, cams, doLamps=False):
+    def __init__(self, actor, exptype, exptime, cams, doLamps=False, doTest=False):
+        exptype = 'test' if doTest else exptype
         self.doAbort = False
         self.doFinish = False
         self.actor = actor
