@@ -12,7 +12,7 @@ reload(exposure)
 
 
 class ExposeCmd(object):
-    expTypes = ['bias', 'dark', 'object', 'arc', 'flat']
+    expTypes = ['bias', 'dark', 'object', 'arc', 'flat', 'domeflat']
 
     def __init__(self, actor):
         # This lets us access the rest of the actor.
