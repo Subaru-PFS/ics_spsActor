@@ -5,11 +5,12 @@ import logging
 import time
 
 import actorcore.ICC
+from pfs.utils.instdata import InstData
 from pfs.utils.spectroIds import SpectroIds
-from pfs.utils.sps.config import SpecModule, SpsConfig
+from pfs.utils.sps.config import SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils import parse
-from pfs.utils.instdata import InstData
+
 
 class SpsActor(actorcore.ICC.ICC):
     validCams = [SpectroIds(f'{arm}{specNum}') for arm in SpectroIds.validArms for specNum in SpectroIds.validModules]

@@ -4,6 +4,7 @@ from datetime import timedelta
 import pandas as pd
 from actorcore.QThread import QThread
 from opdb import utils, opdb
+from pfs.utils.sps.config import SpsConfig
 from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, fromisoformat
 
 
@@ -40,6 +41,7 @@ class Exposure(object):
         exptype = 'test' if doTest else exptype
         self.doAbort = False
         self.doFinish = False
+        self.spsConfig = SpsConfig.fromConfig(actor)
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
@@ -125,10 +127,11 @@ class SmExposure(QThread):
         self.exp = exp
         self.smId = smId
         self.arms = arms
-        self.enu = f'enu_sm{smId}'
+        self.specName = f'sm{smId}'
+        self.enu = f'enu_{self.specName}'
         self.camExp = [CcdExposure(exp, f'{arm}{smId}') for arm in arms]
 
-        QThread.__init__(self, exp.actor, f'sm{smId}')
+        QThread.__init__(self, exp.actor, self.specName)
         self.start()
 
     @property
@@ -173,7 +176,9 @@ class SmExposure(QThread):
         if doLamps:
             cmd.debug(f'text="adjusting exposure for lamp control... "')
             shutterTime = self.exp.exptime + 4
-            lampq = self.actor.cmdr.cmdq(actor='dcb',
+            lightSource = self.exp.spsConfig.specModules[self.specName].lightSource
+
+            lampq = self.actor.cmdr.cmdq(actor=lightSource,
                                          cmdStr=f'sources go delay=2',
                                          timeLim=shutterTime + 5,
                                          forUserCmd=cmd)
