@@ -71,6 +71,10 @@ class Exposure(object):
 
     def abort(self, cmd):
         """ Abort current exposure. """
+        if self.doLamps:
+            [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
+            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'sources abort', timeLim=10, forUserCmd=cmd)
+
         self.doAbort = True
         for thread in self.threads:
             thread.abort(cmd)
@@ -142,6 +146,10 @@ class SmExposure(QThread):
     def isFinished(self):
         return all(camExp.isFinished for camExp in self.camExp)
 
+    @property
+    def lightSource(self):
+        return self.exp.spsConfig.specModules[self.specName].lightSource
+
     def currently(self, state):
         """ current camExp states  """
         return [camExp.state == state for camExp in self.runExp]
@@ -176,9 +184,8 @@ class SmExposure(QThread):
         if doLamps:
             cmd.debug(f'text="adjusting exposure for lamp control... "')
             shutterTime = self.exp.exptime + 4
-            lightSource = self.exp.spsConfig.specModules[self.specName].lightSource
 
-            lampq = self.actor.cmdr.cmdq(actor=lightSource,
+            lampq = self.actor.cmdr.cmdq(actor=self.lightSource,
                                          cmdStr=f'sources go delay=2',
                                          timeLim=shutterTime + 5,
                                          forUserCmd=cmd)
