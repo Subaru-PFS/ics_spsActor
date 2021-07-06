@@ -1,8 +1,7 @@
-from datetime import datetime as dt
-from datetime import timedelta
-
 import pandas as pd
 from actorcore.QThread import QThread
+from datetime import datetime as dt
+from datetime import timedelta
 from opdb import utils, opdb
 from pfs.utils.sps.config import SpsConfig
 from spsActor.utils import cmdKeys, camPerSpec, wait, threaded, fromisoformat
@@ -81,6 +80,10 @@ class Exposure(object):
 
     def finish(self, cmd):
         """ Finish current exposure. """
+        if self.doLamps:
+            [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
+            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'sources abort', timeLim=10, forUserCmd=cmd)
+
         self.doFinish = True
         for thread in self.threads:
             thread.finish(cmd)
