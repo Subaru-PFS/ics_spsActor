@@ -72,7 +72,7 @@ class Exposure(object):
         """ Abort current exposure. """
         if self.doLamps:
             [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
-            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'sources abort', timeLim=10, forUserCmd=cmd)
+            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'lamps abort', timeLim=10, forUserCmd=cmd)
 
         self.doAbort = True
         for thread in self.threads:
@@ -82,7 +82,7 @@ class Exposure(object):
         """ Finish current exposure. """
         if self.doLamps:
             [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
-            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'sources abort', timeLim=10, forUserCmd=cmd)
+            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'lamps abort', timeLim=10, forUserCmd=cmd)
 
         self.doFinish = True
         for thread in self.threads:
@@ -189,7 +189,7 @@ class SmExposure(QThread):
             shutterTime = self.exp.exptime + 4
 
             lampq = self.actor.cmdr.cmdq(actor=self.lightSource,
-                                         cmdStr=f'sources go delay=2',
+                                         cmdStr=f'lamps go delay=2',
                                          timeLim=shutterTime + 5,
                                          forUserCmd=cmd)
         else:
