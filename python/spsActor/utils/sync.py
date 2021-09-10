@@ -7,8 +7,8 @@ from spsActor.utils import wait, threaded
 class Sync(object):
     """ Placeholder to synchronise multiple command thread. """
 
-    def __init__(self):
-        self.cmdThd = []
+    def __init__(self, cmdThd):
+        self.cmdThd = cmdThd
 
     def __del__(self):
         self.exit()
@@ -17,33 +17,14 @@ class Sync(object):
     def finished(self):
         return all([th.finished for th in self.cmdThd])
 
-    @classmethod
-    def slit(cls, spsActor, specNums, cmdHead, **kwargs):
-        """ Create slit command thread from specNums. """
-        obj = cls()
-        obj.cmdThd = [Slit(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
-        return obj
-
-    @classmethod
-    def iis(cls, spsActor, specNums, cmdHead, **kwargs):
-        """ Create slit command thread from specNums. """
-        obj = cls()
-        obj.cmdThd = [Iis(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
-        return obj
-
-    @classmethod
-    def ccdMotors(cls, actor, cams, cmdHead, **kwargs):
-        """ Create ccdMotors command thread from list of camera. """
-        cmdStr = f'motors {cmdHead}'.strip() if 'motors' not in cmdHead else cmdHead
-        obj = cls()
-        obj.cmdThd = [CcdMotors(actor, cam, cmdStr, **kwargs) for cam in cams]
-        return obj
-
     def process(self, cmd):
         """ Call, synchronise and handle results. """
+        self.inform(cmd)
         self.call(cmd)
         self.sync()
-        return self.examinate()
+        ret = self.examinate()
+        self.finish(cmd)
+        return ret
 
     def call(self, cmd):
         """ Call for each command thread. """
@@ -59,10 +40,57 @@ class Sync(object):
         """ Retrieve list of exposable camera. """
         return set(sum([th.exposable for th in self.cmdThd], []))
 
+    def inform(self, cmd):
+        """ Prototype. """
+        pass
+
+    def finish(self, cmd):
+        """ Prototype. """
+        pass
+
     def exit(self):
         """ Kill all command threads before exiting. """
         for th in self.cmdThd:
             th.exit()
+
+
+class RdaMove(Sync):
+    def __init__(self, spsActor, specNums, targetPosition):
+        cmdThd = [RdaThread(spsActor, specNum, targetPosition) for specNum in specNums]
+        Sync.__init__(self, cmdThd)
+        self.targetPosition = targetPosition
+
+    def inform(self, cmd):
+        specNames = ','.join([th.specName for th in self.cmdThd])
+        cmd.inform(f'text="rda moving to {self.targetPosition} position for {specNames}"')
+
+    def finish(self, cmd):
+        specNames = ','.join([th.specName for th in self.cmdThd])
+        cmd.finish(f'text="rdaMove({specNames}) to {self.targetPosition} position completed"')
+
+    def examinate(self):
+        failures = [th for th in self.cmdThd if th.failed]
+        if failures:
+            raise RuntimeError(f'RdaMove failed for {",".join([failure.specName for failure in failures])} !!!')
+
+
+class SlitMove(Sync):
+    def __init__(self, spsActor, specNums, cmdHead, **kwargs):
+        cmdThd = [SlitThread(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
+        Sync.__init__(self, cmdThd)
+
+
+class CcdMotorsMove(Sync):
+    def __init__(self, spsActor, cams, cmdHead, **kwargs):
+        cmdStr = f'motors {cmdHead}'.strip() if 'motors' not in cmdHead else cmdHead
+        cmdThd = [CcdMotorsThread(spsActor, cam, cmdStr, **kwargs) for cam in cams]
+        Sync.__init__(self, cmdThd)
+
+
+class IisSwitch(Sync):
+    def __init__(self, spsActor, specNums, cmdHead, **kwargs):
+        cmdThd = [IisThread(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
+        Sync.__init__(self, cmdThd)
 
 
 class CmdThread(QThread):
@@ -103,14 +131,20 @@ class CmdThread(QThread):
     def call(self, cmd):
         """ Execute precheck, cancel if an exception is raised, if not call command in the thread. """
         try:
-            self.precheck()
-            self.cmdVar = self.actor.safeCall(cmd, actor=self.actorName, cmdStr=self.cmdStr, timeLim=self.timeLim,
-                                              **self.kwargs)
+            self.precheck(cmd)
+            cmdVar = self.actor.safeCall(cmd, actor=self.actorName, cmdStr=self.cmdStr, timeLim=self.timeLim,
+                                         **self.kwargs)
+            self.postcheck(cmd)
+            self.cmdVar = cmdVar
         except Exception as e:
             cmd.warn('text=%s' % self.actor.strTraceback(e))
             self.cancel()
 
-    def precheck(self):
+    def precheck(self, cmd):
+        """ Condition(s) to be checked before firing the command. """
+        pass
+
+    def postcheck(self, cmd):
         """ Condition(s) to be checked before firing the command. """
         pass
 
@@ -124,9 +158,13 @@ class EnuThread(CmdThread):
 
     def __init__(self, spsActor, specNum, cmdStr, timeLim=60, **kwargs):
         self.specNum = specNum
-        actorName = f'enu_sm{specNum}'
+        actorName = f'enu_{self.specName}'
         spsActor.requireModels([actorName])
         CmdThread.__init__(self, spsActor, actorName, cmdStr, timeLim=timeLim, **kwargs)
+
+    @property
+    def specName(self):
+        return f'sm{self.specNum}'
 
     @property
     def cams(self):
@@ -147,29 +185,67 @@ class XcuThread(CmdThread):
         return [self.cam]
 
 
-class Slit(EnuThread):
+class SlitThread(EnuThread):
     """ Placeholder to a handle slit command thread. """
 
     def __init__(self, spsActor, specNum, cmdHead, **kwargs):
         cmdStr = f'slit {cmdHead}'.strip() if 'slit' not in cmdHead else cmdHead
         EnuThread.__init__(self, spsActor, specNum, cmdStr, **kwargs)
 
-    def precheck(self):
+    def genSlitPosition(self, cmd):
+        focus, ditherY, ditherX, __, __, __ = self.keyVarDict['slit'].getValue(doRaise=False)
+
+        cmd.inform(f'{self.specName}slitFocus={focus}')
+        cmd.inform(f'{self.specName}slitDitherX={ditherX}')
+        cmd.inform(f'{self.specName}slitDitherY={ditherY}')
+
+    def precheck(self, cmd):
         """ Check that the slit in the correct state prior to any movement. """
         state, substate = self.keyVarDict['slitFSM'].getValue(doRaise=False)
 
         if not (state == 'ONLINE' and substate == 'IDLE'):
             raise ValueError(f'{self.actorName}__slitFSM={state},{substate} != ONLINE,IDLE before moving, aborting ...')
 
+        self.genSlitPosition(cmd)
 
-class Iis(EnuThread):
+    def postcheck(self, cmd):
+        """ Check that the slit in the correct state prior to any movement. """
+        self.genSlitPosition(cmd)
+
+
+class RdaThread(EnuThread):
+    """ Placeholder to a handle Rda command thread. """
+
+    def __init__(self, spsActor, specNum, targetPosition):
+        cmdStr = f'rexm moveTo {targetPosition}'
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=180)
+
+    def genRdaPosition(self, cmd):
+        position = self.keyVarDict['rexm'].getValue(doRaise=False)
+        cmd.inform(f'{self.specName}rda={position}')
+
+    def precheck(self, cmd):
+        """ Check that the rda in the correct state prior to any movement. """
+        state, substate = self.keyVarDict['rexmFSM'].getValue(doRaise=False)
+
+        if not (state == 'ONLINE' and substate == 'IDLE'):
+            raise ValueError(f'{self.actorName}__rexmFSM={state},{substate} != ONLINE,IDLE before moving, aborting ...')
+
+        self.genRdaPosition(cmd)
+
+    def postcheck(self, cmd):
+        """ Check that the slit in the correct state prior to any movement. """
+        self.genRdaPosition(cmd)
+
+
+class IisThread(EnuThread):
     """ Placeholder to a handle iis command thread. """
 
     def __init__(self, spsActor, specNum, cmdHead, timeLim=60, **kwargs):
         cmdStr = f'iis {cmdHead}'.strip() if 'iis' not in cmdHead else cmdHead
         EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=timeLim, **kwargs)
 
-    def precheck(self):
+    def precheck(self, cmd):
         """ Check that the slit in the correct state prior to any movement. """
         state, substate = self.keyVarDict['iisFSM'].getValue(doRaise=False)
 
@@ -177,7 +253,7 @@ class Iis(EnuThread):
             raise ValueError(f'{self.actorName}__iisFSM={state},{substate} != ONLINE,IDLE, aborting ...')
 
 
-class CcdMotors(XcuThread):
+class CcdMotorsThread(XcuThread):
     """ Placeholder to a handle CcdMotors command thread. """
     motorIds = dict(a=[1], b=[2], c=[3], piston=[1, 2, 3])
 
@@ -186,9 +262,9 @@ class CcdMotors(XcuThread):
         XcuThread.__init__(self, spsActor, cam, cmdStr, **kwargs)
 
     def motors(self, **kwargs):
-        return list(set(sum([CcdMotors.motorIds[k] for k in kwargs], [])))
+        return list(set(sum([CcdMotorsThread.motorIds[k] for k in kwargs], [])))
 
-    def precheck(self):
+    def precheck(self, cmd):
         """ Check that the ccdMotors are in the correct state prior to any movement. """
         for i in self.motorList:
             state, _, _, _, _ = self.keyVarDict[f'ccdMotor{i}'].getValue(doRaise=False)

@@ -3,7 +3,7 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from spsActor.utils.sync import Sync
+import spsActor.utils.sync as sync
 
 
 class SyncCmd(object):
@@ -19,6 +19,7 @@ class SyncCmd(object):
         self.vocab = [
             ('slit', '<focus> [@(microns)] [@(abs)] [<cams>]', self.slitFocus),
             ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<cams>]', self.slitDither),
+            ('rda', '@moveTo @(low|med) [<sm>] [<cams>]', self.rdaMove),
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
@@ -30,6 +31,8 @@ class SyncCmd(object):
                                         keys.Key('focus', types.Float(), help='focus value'),
                                         keys.Key("cams", types.String() * (1,),
                                                  help='list of camera to take exposure from'),
+                                        keys.Key('sm', types.Int() * (1,),
+                                                 help='spectrograph module(s)'),
                                         keys.Key("a", types.Float(),
                                                  help='the number of ticks/microns to move actuator A'),
                                         keys.Key("b", types.Float(),
@@ -66,7 +69,7 @@ class SyncCmd(object):
         abs = 'abs' in cmdKeys
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.slit(self.actor, specNums=specNums, cmdHead='', focus=focus, microns=microns, abs=abs)
+        syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='', focus=focus, microns=microns, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
@@ -88,8 +91,8 @@ class SyncCmd(object):
 
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.slit(self.actor, specNums=specNums, cmdHead='dither',
-                            x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
+        syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='dither',
+                                x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
@@ -97,6 +100,27 @@ class SyncCmd(object):
             return
 
         cmd.finish(f'exposable={",".join(cams)}')
+
+    def rdaMove(self, cmd):
+        """ Move multiple rda synchronously. """
+        cmdKeys = cmd.cmd.keywords
+
+        if 'cams' in cmdKeys:
+            specNums = list(set([int(cam[-1]) for cam in cmdKeys['cams'].values]))
+        elif 'sm' in cmdKeys:
+            specNums = list(map(int, cmdKeys['sm'].values))
+        else:
+            specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
+
+        if 'low' in cmdKeys:
+            targetPosition = 'low'
+        elif 'med' in cmdKeys:
+            targetPosition = 'med'
+        else:
+            raise ValueError('incorrect target position')
+
+        syncCmd = sync.RdaMove(self.actor, specNums=specNums, targetPosition=targetPosition)
+        syncCmd.process(cmd)
 
     def ccdMotors(self, cmd):
         """ Move multiple ccdMotors synchronously. """
@@ -110,8 +134,8 @@ class SyncCmd(object):
         microns = 'microns' in cmdKeys
         abs = 'abs' in cmdKeys
 
-        syncCmd = Sync.ccdMotors(self.actor, cams=cams, cmdHead='move',
-                                 a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
+        syncCmd = sync.CcdMotorsMove(self.actor, cams=cams, cmdHead='move',
+                                     a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
@@ -130,8 +154,8 @@ class SyncCmd(object):
         timeLim = warmingTime if warmingTime is not None else 60
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.iis(self.actor, specNums=specNums, cmdHead='',
-                           on=on, warmingTime=warmingTime, timeLim=timeLim + 30)
+        syncCmd = sync.IisSwitch(self.actor, specNums=specNums, cmdHead='',
+                                 on=on, warmingTime=warmingTime, timeLim=timeLim + 30)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
@@ -148,7 +172,7 @@ class SyncCmd(object):
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
         specNums = list(set([int(cam[-1]) for cam in cams]))
 
-        syncCmd = Sync.iis(self.actor, specNums=specNums, cmdHead='', off=off)
+        syncCmd = sync.IisSwitch(self.actor, specNums=specNums, cmdHead='', off=off)
 
         cams = list(syncCmd.process(cmd) & set(cams))
         if not cams:
