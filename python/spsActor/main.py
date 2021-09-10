@@ -27,6 +27,7 @@ class SpsActor(actorcore.ICC.ICC):
         self.logger.setLevel(logLevel)
         self.everConnected = False
         self.instData = InstData(self)
+        self.spsConfig = None
 
     @property
     def cams(self):
@@ -78,6 +79,8 @@ class SpsActor(actorcore.ICC.ICC):
         for specModule in spsConfig.specModules.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
+
+        self.spsConfig = spsConfig
 
     def connectionMade(self):
         if self.everConnected is False:
