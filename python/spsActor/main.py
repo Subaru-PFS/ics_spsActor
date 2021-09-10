@@ -79,6 +79,7 @@ class SpsActor(actorcore.ICC.ICC):
         for specModule in spsConfig.specModules.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
+            self.addModels([f'enu_{specModule.specName}'])
 
         self.spsConfig = spsConfig
 

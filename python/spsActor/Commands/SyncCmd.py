@@ -20,6 +20,10 @@ class SyncCmd(object):
             ('slit', '<focus> [@(microns)] [@(abs)] [<cams>]', self.slitFocus),
             ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<cams>]', self.slitDither),
             ('rda', '@moveTo @(low|med) [<sm>] [<cams>]', self.rdaMove),
+            ('bia', '@on [strobe] [<power>] [<period>] [<sm>] [<cams>]', self.biaSwitchOn),
+            ('bia', '@off [<sm>] [<cams>]', self.biaSwitchOff),
+            ('bia', '@strobe @off [<sm>] [<cams>]', self.biaSwitchOff),
+
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
@@ -50,6 +54,9 @@ class SyncCmd(object):
                                         keys.Key('off', types.String() * (1, None),
                                                  help='which iis lamp to switch off.'),
                                         keys.Key('warmingTime', types.Float(), help='customizable warming time'),
+                                        keys.Key('period', types.Int(), help='bia period'),
+                                        keys.Key("power", types.Float(),
+                                                 help='power level to set (0..100)'),
                                         )
 
     @property
@@ -120,6 +127,40 @@ class SyncCmd(object):
             raise ValueError('incorrect target position')
 
         syncCmd = sync.RdaMove(self.actor, specNums=specNums, targetPosition=targetPosition)
+        syncCmd.process(cmd)
+
+    def biaSwitchOn(self, cmd):
+        """ Switch multiple bia synchronously. """
+        cmdKeys = cmd.cmd.keywords
+
+        if 'cams' in cmdKeys:
+            specNums = list(set([int(cam[-1]) for cam in cmdKeys['cams'].values]))
+        elif 'sm' in cmdKeys:
+            specNums = list(map(int, cmdKeys['sm'].values))
+        else:
+            specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
+
+        power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
+        period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
+        strobe = 'strobe' in cmdKeys
+
+        syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums, strobe=strobe, power=power, period=period)
+        syncCmd.process(cmd)
+
+    def biaSwitchOff(self, cmd):
+        """ Switch multiple bia synchronously. """
+        cmdKeys = cmd.cmd.keywords
+
+        if 'cams' in cmdKeys:
+            specNums = list(set([int(cam[-1]) for cam in cmdKeys['cams'].values]))
+        elif 'sm' in cmdKeys:
+            specNums = list(map(int, cmdKeys['sm'].values))
+        else:
+            specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
+
+        state = 'strobe off' if 'strobe' in cmdKeys else 'off'
+
+        syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
         syncCmd.process(cmd)
 
     def ccdMotors(self, cmd):
