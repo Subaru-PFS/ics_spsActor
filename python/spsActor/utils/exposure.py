@@ -64,6 +64,11 @@ class Exposure(object):
     def aborted(self):
         return self.cleared and self.doAbort
 
+    @property
+    def lampsActor(self):
+        [lampsActor] = list(set([thread.lightSource.lampsActor for thread in self.threads]))
+        return lampsActor
+
     def instantiate(self, cams):
         """ Create underlying SmExposure threads.  """
         return [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
@@ -71,8 +76,7 @@ class Exposure(object):
     def abort(self, cmd):
         """ Abort current exposure. """
         if self.doLamps:
-            [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
-            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'lamps abort', timeLim=10, forUserCmd=cmd)
+            self.actor.cmdr.cmdq(actor=self.lampsActor, cmdStr=f'abort', timeLim=10, forUserCmd=cmd)
 
         self.doAbort = True
         for thread in self.threads:
@@ -81,8 +85,7 @@ class Exposure(object):
     def finish(self, cmd):
         """ Finish current exposure. """
         if self.doLamps:
-            [dcb, ] = [thread.lightSource for thread in self.threads if 'dcb' in thread.lightSource]
-            self.actor.cmdr.cmdq(actor=dcb, cmdStr=f'lamps abort', timeLim=10, forUserCmd=cmd)
+            self.actor.cmdr.cmdq(actor=self.lampsActor, cmdStr=f'abort', timeLim=10, forUserCmd=cmd)
 
         self.doFinish = True
         for thread in self.threads:
@@ -188,8 +191,8 @@ class SmExposure(QThread):
             cmd.debug(f'text="adjusting exposure for lamp control... "')
             shutterTime = self.exp.exptime + 4
 
-            lampq = self.actor.cmdr.cmdq(actor=self.lightSource,
-                                         cmdStr=f'lamps go delay=2',
+            lampq = self.actor.cmdr.cmdq(actor=self.lightSource.lampsActor,
+                                         cmdStr=f'go delay=2',
                                          timeLim=shutterTime + 5,
                                          forUserCmd=cmd)
         else:
