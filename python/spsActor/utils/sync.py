@@ -74,6 +74,26 @@ class RdaMove(Sync):
             raise RuntimeError(f'RdaMove failed for {",".join([failure.specName for failure in failures])} !!!')
 
 
+class BiaSwitch(Sync):
+    def __init__(self, spsActor, specNums, state, **kwargs):
+        cmdThd = [BiaThread(spsActor, specNum, state, **kwargs) for specNum in specNums]
+        Sync.__init__(self, cmdThd)
+        self.state = state
+
+    def inform(self, cmd):
+        specNames = ','.join([th.specName for th in self.cmdThd])
+        cmd.inform(f'text="switching bia {self.state} for {specNames}"')
+
+    def finish(self, cmd):
+        specNames = ','.join([th.specName for th in self.cmdThd])
+        cmd.finish(f'text="bia switched {self.state} for {specNames}"')
+
+    def examinate(self):
+        failures = [th for th in self.cmdThd if th.failed]
+        if failures:
+            raise RuntimeError(f'RdaMove failed for {",".join([failure.specName for failure in failures])} !!!')
+
+
 class SlitMove(Sync):
     def __init__(self, spsActor, specNums, cmdHead, **kwargs):
         cmdThd = [SlitThread(spsActor, specNum, cmdHead, **kwargs) for specNum in specNums]
@@ -155,6 +175,7 @@ class CmdThread(QThread):
 
 class EnuThread(CmdThread):
     """ Placeholder to a handle enu command thread. """
+    controller = ''
 
     def __init__(self, spsActor, specNum, cmdStr, timeLim=60, **kwargs):
         self.specNum = specNum
@@ -170,6 +191,86 @@ class EnuThread(CmdThread):
     def cams(self):
         return [f'{arm}{self.specNum}' for arm in ['b', 'r', 'n']]
 
+    def genKeys(self, cmd):
+        """ Check that the rda in the correct state prior to any movement. """
+        pass
+
+    def precheck(self, cmd):
+        """ Check that the rda in the correct state prior to any movement. """
+        FSM = f'{self.controller}FSM'
+        state, substate = self.keyVarDict[FSM].getValue(doRaise=False)
+
+        if not (state == 'ONLINE' and substate == 'IDLE'):
+            raise ValueError(f'{self.actorName}__{FSM}={state},{substate} != ONLINE,IDLE before starting ...')
+
+        self.genKeys(cmd)
+
+    def postcheck(self, cmd):
+        """ Check that the rda in the correct state prior to any movement. """
+        self.genKeys(cmd)
+
+
+class SlitThread(EnuThread):
+    controller = 'slit'
+    """ Placeholder to a handle slit command thread. """
+
+    def __init__(self, spsActor, specNum, cmdHead, **kwargs):
+        cmdStr = f'slit {cmdHead}'.strip() if 'slit' not in cmdHead else cmdHead
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, **kwargs)
+
+    def genKeys(self, cmd):
+        focus, ditherY, ditherX, __, __, __ = self.keyVarDict['slit'].getValue(doRaise=False)
+
+        cmd.inform(f'{self.specName}slitFocus={focus}')
+        cmd.inform(f'{self.specName}slitDitherX={ditherX}')
+        cmd.inform(f'{self.specName}slitDitherY={ditherY}')
+
+
+class RdaThread(EnuThread):
+    """ Placeholder to a handle Rda command thread. """
+    controller = 'rexm'
+
+    def __init__(self, spsActor, specNum, targetPosition):
+        cmdStr = f'rexm moveTo {targetPosition}'
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=180)
+
+    def genKeys(self, cmd):
+        position = self.keyVarDict['rexm'].getValue(doRaise=False)
+        cmd.inform(f'{self.specName}rda={position}')
+
+
+class BiaThread(EnuThread):
+    """ Placeholder to a handle Rda command thread. """
+    controller = 'biasha'
+
+    def __init__(self, spsActor, specNum, state, **kwargs):
+        cmdStr = f'bia {state}'
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, **kwargs)
+
+    def precheck(self, cmd):
+        """ Check that the rda in the correct state prior to any movement. """
+        FSM = f'{self.controller}FSM'
+        state, substate = self.keyVarDict[FSM].getValue(doRaise=False)
+        print()
+
+        if not (state == 'ONLINE' and substate in ['IDLE', 'BIA']):
+            raise ValueError(f'{self.actorName}__{FSM}={state},{substate} dont match BIA operation...')
+
+        self.genKeys(cmd)
+
+    def genKeys(self, cmd):
+        state = self.keyVarDict['bia'].getValue(doRaise=False)
+        cmd.inform(f'{self.specName}bia={state}')
+
+
+class IisThread(EnuThread):
+    """ Placeholder to a handle iis command thread. """
+    controller = 'iis'
+
+    def __init__(self, spsActor, specNum, cmdHead, timeLim=60, **kwargs):
+        cmdStr = f'iis {cmdHead}'.strip() if 'iis' not in cmdHead else cmdHead
+        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=timeLim, **kwargs)
+
 
 class XcuThread(CmdThread):
     """ Placeholder to a handle xcu command thread. """
@@ -183,74 +284,6 @@ class XcuThread(CmdThread):
     @property
     def cams(self):
         return [self.cam]
-
-
-class SlitThread(EnuThread):
-    """ Placeholder to a handle slit command thread. """
-
-    def __init__(self, spsActor, specNum, cmdHead, **kwargs):
-        cmdStr = f'slit {cmdHead}'.strip() if 'slit' not in cmdHead else cmdHead
-        EnuThread.__init__(self, spsActor, specNum, cmdStr, **kwargs)
-
-    def genSlitPosition(self, cmd):
-        focus, ditherY, ditherX, __, __, __ = self.keyVarDict['slit'].getValue(doRaise=False)
-
-        cmd.inform(f'{self.specName}slitFocus={focus}')
-        cmd.inform(f'{self.specName}slitDitherX={ditherX}')
-        cmd.inform(f'{self.specName}slitDitherY={ditherY}')
-
-    def precheck(self, cmd):
-        """ Check that the slit in the correct state prior to any movement. """
-        state, substate = self.keyVarDict['slitFSM'].getValue(doRaise=False)
-
-        if not (state == 'ONLINE' and substate == 'IDLE'):
-            raise ValueError(f'{self.actorName}__slitFSM={state},{substate} != ONLINE,IDLE before moving, aborting ...')
-
-        self.genSlitPosition(cmd)
-
-    def postcheck(self, cmd):
-        """ Check that the slit in the correct state prior to any movement. """
-        self.genSlitPosition(cmd)
-
-
-class RdaThread(EnuThread):
-    """ Placeholder to a handle Rda command thread. """
-
-    def __init__(self, spsActor, specNum, targetPosition):
-        cmdStr = f'rexm moveTo {targetPosition}'
-        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=180)
-
-    def genRdaPosition(self, cmd):
-        position = self.keyVarDict['rexm'].getValue(doRaise=False)
-        cmd.inform(f'{self.specName}rda={position}')
-
-    def precheck(self, cmd):
-        """ Check that the rda in the correct state prior to any movement. """
-        state, substate = self.keyVarDict['rexmFSM'].getValue(doRaise=False)
-
-        if not (state == 'ONLINE' and substate == 'IDLE'):
-            raise ValueError(f'{self.actorName}__rexmFSM={state},{substate} != ONLINE,IDLE before moving, aborting ...')
-
-        self.genRdaPosition(cmd)
-
-    def postcheck(self, cmd):
-        """ Check that the slit in the correct state prior to any movement. """
-        self.genRdaPosition(cmd)
-
-
-class IisThread(EnuThread):
-    """ Placeholder to a handle iis command thread. """
-
-    def __init__(self, spsActor, specNum, cmdHead, timeLim=60, **kwargs):
-        cmdStr = f'iis {cmdHead}'.strip() if 'iis' not in cmdHead else cmdHead
-        EnuThread.__init__(self, spsActor, specNum, cmdStr, timeLim=timeLim, **kwargs)
-
-    def precheck(self, cmd):
-        """ Check that the slit in the correct state prior to any movement. """
-        state, substate = self.keyVarDict['iisFSM'].getValue(doRaise=False)
-
-        if not (state == 'ONLINE' and substate == 'IDLE'):
-            raise ValueError(f'{self.actorName}__iisFSM={state},{substate} != ONLINE,IDLE, aborting ...')
 
 
 class CcdMotorsThread(XcuThread):
