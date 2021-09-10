@@ -20,8 +20,9 @@ class SyncCmd(object):
             ('slit', '<focus> [@(microns)] [@(abs)] [<cams>]', self.slitFocus),
             ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<cams>]', self.slitDither),
             ('rda', '@moveTo @(low|med) [<sm>] [<cams>]', self.rdaMove),
-            ('bia', '@on [<power>] [<sm>] [<cams>]', self.biaSwitchOn),
+            ('bia', '@on [strobe] [<power>] [<period>] [<sm>] [<cams>]', self.biaSwitchOn),
             ('bia', '@off [<sm>] [<cams>]', self.biaSwitchOff),
+            ('bia', '@strobe @off [<sm>] [<cams>]', self.biaSwitchOff),
 
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
@@ -140,8 +141,10 @@ class SyncCmd(object):
             specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
 
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
+        period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
+        strobe = 'strobe' in cmdKeys
 
-        syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums, power=power)
+        syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums, strobe=strobe, power=power, period=period)
         syncCmd.process(cmd)
 
     def biaSwitchOff(self, cmd):
@@ -155,7 +158,9 @@ class SyncCmd(object):
         else:
             specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
 
-        syncCmd = sync.BiaSwitch(self.actor, state='off', specNums=specNums)
+        state = 'strobe off' if 'strobe' in cmdKeys else 'off'
+
+        syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
         syncCmd.process(cmd)
 
     def ccdMotors(self, cmd):
