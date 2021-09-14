@@ -1,7 +1,7 @@
 import time
 
 from actorcore.QThread import QThread
-from spsActor.utils import wait, threaded
+from spsActor.utils.lib import wait, threaded
 
 
 class Sync(object):
