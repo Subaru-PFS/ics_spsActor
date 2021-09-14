@@ -9,7 +9,7 @@ from pfs.utils.instdata import InstData
 from pfs.utils.spectroIds import SpectroIds
 from pfs.utils.sps.config import SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
-from spsActor.utils import parse
+from spsActor.utils.lib import parse
 
 
 class SpsActor(actorcore.ICC.ICC):
@@ -33,9 +33,12 @@ class SpsActor(actorcore.ICC.ICC):
     def cams(self):
         return [c.strip() for c in self.config.get('sps', 'cams').split(',')]
 
-    def safeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
+    def crudeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
         cmdStr = parse(cmdStr, **kwargs)
-        cmdVar = self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd)
+        return self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd)
+
+    def safeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
+        cmdVar = self.crudeCall(cmd, actor, cmdStr, timeLim=timeLim, **kwargs)
 
         if cmdVar.didFail:
             reply = cmdVar.replyList[-1]

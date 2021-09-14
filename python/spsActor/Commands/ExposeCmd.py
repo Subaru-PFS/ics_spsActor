@@ -6,7 +6,7 @@ import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from opscore.utility.qstr import qstr
 from spsActor.utils import exposure
-from spsActor.utils import singleShot, wait
+from spsActor.utils.lib import singleShot, wait
 
 reload(exposure)
 
@@ -67,13 +67,17 @@ class ExposeCmd(object):
         self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doTest=doTest)
 
     @singleShot
-    def process(self, cmd, visit, exptype, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, **kwargs):
         """Process exposure in another thread """
+
+        def genFileIds(visit, frames):
+            return f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}"""
+
         if visit in self.exp.keys():
             cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
 
-        cls = exposure.Calib if exptype in ['bias', 'dark'] else exposure.Exposure
+        cls = exposure.DarkExposure if exptype in ['bias', 'dark'] else exposure.Exposure
         exp = cls(self.actor, exptype=exptype, **kwargs)
         self.exp[visit] = exp
 
@@ -83,14 +87,14 @@ class ExposeCmd(object):
             while not exp.isFinished:
                 wait()
 
-            if exp.cleared:
-                if exp.aborted:
-                    raise RuntimeError('abort exposure requested...')
-                else:
-                    raise RuntimeError('exposure failed...')
-
-            frames = exp.store(cmd, visit)
-            cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}""")
+            if any(exp.clearedExp):
+                if exp.storable:
+                    frames = exp.store(cmd, visit)
+                    cmd.warn(genFileIds(visit, frames))
+                cmd.fail(f'text="{exp.failures.format()}"')
+            else:
+                frames = exp.store(cmd, visit)
+                cmd.finish(genFileIds(visit, frames))
 
         finally:
             exp.exit()
