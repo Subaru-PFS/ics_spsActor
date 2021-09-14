@@ -27,14 +27,23 @@ class LampsFailed(ExposureException):
 class ExposureAborted(Exception):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
+    def __str__(self):
+        return f'ExposureAborted()'
 
-class StopExposureASAP(Exception):
+
+class EarlyFinish(Exception):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
+    def __str__(self):
+        return f'ExposureAborted(doFinish requested before exposing)'
 
 
 class Failures(list):
     def add(self, reason):
-        self.append(reason)
+        if 'ExposureAborted(' in reason and self.format():
+            pass  # something else causes the failure
+        else:
+            self.append(reason)
 
     def format(self):
         return ','.join(list(set(self)))

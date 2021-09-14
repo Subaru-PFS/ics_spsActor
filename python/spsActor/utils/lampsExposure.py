@@ -12,7 +12,7 @@ class LampsControl(QThread):
         self.lampsActor = lampsActor
         self.cmdVar = None
         self.goSignal = False
-        self.aborted = False
+        self.aborted = None
         QThread.__init__(self, exp.actor, 'lampsControl')
         QThread.start(self)
 
@@ -47,24 +47,26 @@ class LampsControl(QThread):
             self._go(cmd)
             self.exp.finish(cmd)
 
-        except exception.ExposureAborted:
-            self.abort(cmd)
-        except exception.LampsFailed as e:
+        except Exception as e:
             self.abort(cmd)
             self.exp.abort(cmd, reason=str(e))
 
     def waitForGoSignal(self):
         """ Create underlying SmExposure threads.  """
         while not self.goSignal:
-            if self.exp.doAbort or self.exp.doFinish:
+            if self.exp.doFinish:
+                raise exception.EarlyFinish
+
+            if self.exp.doAbort:
                 raise exception.ExposureAborted
 
             wait()
 
     def abort(self, cmd):
         """ Create underlying SmExposure threads.  """
-        if not self.aborted:
-            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=10)
+        if self.aborted is None:
+            self.aborted = False
+            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
             self.aborted = True
 
     def finish(self, cmd):
@@ -125,9 +127,13 @@ class Exposure(exposure.Exposure):
         exposure.Exposure.start(self, cmd, visit=visit)
 
     def waitForReadySignal(self):
+        """ Free up all resources """
         while not self.lampsThread.isReady:
-            if self.exp.doAbort or self.exp.doFinish:
-                raise exception.StopExposureASAP
+            if self.exp.doFinish:
+                raise exception.EarlyFinish
+
+            if self.exp.doAbort:
+                raise exception.ExposureAborted
 
             wait()
 

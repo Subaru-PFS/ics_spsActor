@@ -55,14 +55,11 @@ class SpecModuleExposure(QThread):
         while not all(self.currently(state='integrating')):
             wait()
 
-        if any(self.clearedExp):
-            raise exception.StopExposureASAP
-
         if self.exp.doFinish:
-            self.exp.failures.add("ExposureAborted(doFinish requested before exposing)")
+            raise exception.EarlyFinish
 
-        if self.exp.doAbort or self.exp.doFinish:
-            raise exception.StopExposureASAP
+        if self.exp.doAbort or any(self.clearedExp):
+            raise exception.ExposureAborted
 
     def integrate(self, cmd, shutterTime=None):
         """ Integrate for both calib and regular exposure """
@@ -72,7 +69,7 @@ class SpecModuleExposure(QThread):
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enu, cmdStr=f'shutters expose {shutters}',
                                           exptime=shutterTime, timeLim=shutterTime + 2)
         if self.exp.doAbort:
-            raise exception.StopExposureASAP
+            raise exception.ExposureAborted
 
         if cmdVar.didFail:
             raise exception.ShuttersFailed(self.specName, interpretFailure(cmdVar))
@@ -101,10 +98,7 @@ class SpecModuleExposure(QThread):
             exptime, dateobs = self.integrate(cmd)
             self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
-        except exception.StopExposureASAP:
-            self.clearExposure(cmd)
-
-        except exception.ShuttersFailed as e:
+        except Exception as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
 
@@ -281,7 +275,8 @@ class CcdExposure(QThread):
     def integrate(self):
         """ Integrate for exptime in seconds, doFinish==doAbort at the beginning of integration. """
         if self.exp.doFinish:
-            self.exp.failures.add("ExposureAborted(doFinish requested before exposing)")
+            raise exception.EarlyFinish
+        if self.exp.doAbort:
             raise exception.ExposureAborted
 
         tlim = self.wiped + timedelta(seconds=self.exp.exptime)
@@ -311,9 +306,7 @@ class CcdExposure(QThread):
             dateobs = self.integrate()
             self.exptime = self._read(cmd, visit, dateobs)
 
-        except exception.ExposureAborted:
-            self.clearExposure(cmd)
-        except (exception.WipeFailed, exception.ReadFailed) as e:
+        except Exception as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
 
