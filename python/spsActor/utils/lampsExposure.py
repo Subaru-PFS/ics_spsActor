@@ -99,7 +99,6 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         self.shuttersOpen = 'open' in state
 
         if self.shuttersOpen:
-            print(f'state={state}')
             self.exp.sendGoLampsSignal()
 
     def exit(self):
@@ -127,6 +126,9 @@ class Exposure(exposure.Exposure):
 
     def waitForReadySignal(self):
         while not self.lampsThread.isReady:
+            if self.exp.doAbort or self.exp.doFinish:
+                raise exception.StopExposureASAP
+
             wait()
 
     def sendGoLampsSignal(self):

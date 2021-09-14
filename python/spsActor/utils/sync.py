@@ -251,7 +251,6 @@ class BiaThread(EnuThread):
         """ Check that the rda in the correct state prior to any movement. """
         FSM = f'{self.controller}FSM'
         state, substate = self.keyVarDict[FSM].getValue(doRaise=False)
-        print()
 
         if not (state == 'ONLINE' and substate in ['IDLE', 'BIA']):
             raise ValueError(f'{self.actorName}__{FSM}={state},{substate} dont match BIA operation...')

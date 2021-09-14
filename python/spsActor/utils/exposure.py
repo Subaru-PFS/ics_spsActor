@@ -66,7 +66,6 @@ class SpecModuleExposure(QThread):
 
     def integrate(self, cmd, shutterTime=None):
         """ Integrate for both calib and regular exposure """
-
         shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
         shutters = self.getShutters()
