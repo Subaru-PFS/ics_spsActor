@@ -82,7 +82,7 @@ class SpsActor(actorcore.ICC.ICC):
         for specModule in spsConfig.specModules.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
-            self.addModels([f'enu_{specModule.specName}'])
+            self.requireModels([specModule.enuName] + [cam.actorName for cam in specModule.opeCams], cmd)
 
         self.spsConfig = spsConfig
 
@@ -96,6 +96,7 @@ class SpsActor(actorcore.ICC.ICC):
                 logging.info("All Controllers started")
 
             self.everConnected = True
+            self.requireModels(['gen2'])
 
 
 def main():
