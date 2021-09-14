@@ -1,4 +1,3 @@
-import time
 from datetime import datetime as dt
 from datetime import timedelta
 
@@ -9,98 +8,7 @@ from opdb import utils, opdb
 from spsActor.utils.lib import cmdVarToKeys, camPerSpec, wait, threaded, fromisoformat, interpretFailure
 
 
-class Exposure(object):
-    """ Exposure object. """
-
-    def __init__(self, actor, exptype, exptime, cams, doTest=False):
-        exptype = 'test' if doTest else exptype
-        self.doAbort = False
-        self.doFinish = False
-        self.actor = actor
-        self.exptype = exptype
-        self.exptime = exptime
-        self.failures = exception.Failures()
-
-        self.smThreads = self.instantiate(cams)
-
-    @property
-    def camExp(self):
-        return sum([th.camExp for th in self.smThreads], [])
-
-    @property
-    def isFinished(self):
-        return all([th.isFinished for th in self.smThreads])
-
-    @property
-    def storable(self):
-        return any([camExp.storable for camExp in self.camExp])
-
-    @property
-    def clearedExp(self):
-        return [camExp for camExp in self.camExp if camExp.cleared]
-
-    @property
-    def threads(self):
-        return self.smThreads
-
-    def instantiate(self, cams):
-        """ Create underlying SmExposure threads.  """
-        return [SmExposure(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
-
-    def abort(self, cmd, reason="ExposureAborted()"):
-        """ Abort current exposure. """
-        self.doAbort = True
-        self.failures.add(reason)
-
-        for thread in self.threads:
-            thread.abort(cmd)
-
-    def finish(self, cmd):
-        """ Finish current exposure. """
-        self.doFinish = True
-        for thread in self.threads:
-            thread.finish(cmd)
-
-    def start(self, cmd, visit):
-        """ Start all spectrograph module exposures. """
-        for thread in self.smThreads:
-            thread.expose(cmd, visit)
-
-    def exit(self):
-        """ Free up all resources. """
-        for thread in self.threads:
-            thread.exit()
-
-        self.threads.clear()
-
-    def store(self, cmd, visit):
-        """Store Exposure in sps_visit table in opdb database. """
-        try:
-            utils.insert(opdb.OpDB.url, 'sps_visit',
-                         pd.DataFrame(dict(pfs_visit_id=visit, exp_type=self.exptype), index=[0]))
-        except Exception as e:
-            cmd.warn('text=%s' % self.actor.strTraceback(e))
-
-        frames = [camExp.store() for camExp in self.camExp]
-        return list(filter(None, frames))
-
-
-class DarkExposure(Exposure):
-    """ CaliDarkExposureb object. """
-
-    def __init__(self, *args, **kwargs):
-        Exposure.__init__(self, *args, **kwargs)
-
-    @property
-    def camExp(self):
-        return self.threads
-
-    def instantiate(self, cams):
-        """ Create underlying CcdExposure threads object. """
-        return [CcdExposure(self, cam) for cam in cams]
-
-
-class SmExposure(QThread):
+class SpecModuleExposure(QThread):
     """ Placeholder to handle spectograph module cmd threading. """
 
     def __init__(self, exp, smId, arms):
@@ -156,10 +64,10 @@ class SmExposure(QThread):
         if self.exp.doAbort or self.exp.doFinish:
             raise exception.StopExposureASAP
 
-    def integrate(self, cmd):
+    def integrate(self, cmd, shutterTime=None):
         """ Integrate for both calib and regular exposure """
 
-        shutterTime = self.exp.exptime
+        shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
         shutters = self.getShutters()
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enu, cmdStr=f'shutters expose {shutters}',
@@ -223,6 +131,97 @@ class SmExposure(QThread):
 
         self.camExp.clear()
         QThread.exit(self)
+
+
+class Exposure(object):
+    """ Exposure object. """
+    SpecModuleExposureClass = SpecModuleExposure
+    def __init__(self, actor, exptype, exptime, cams, doTest=False):
+        exptype = 'test' if doTest else exptype
+        self.doAbort = False
+        self.doFinish = False
+        self.actor = actor
+        self.exptype = exptype
+        self.exptime = exptime
+        self.failures = exception.Failures()
+
+        self.smThreads = self.instantiate(cams)
+
+    @property
+    def camExp(self):
+        return sum([th.camExp for th in self.smThreads], [])
+
+    @property
+    def isFinished(self):
+        return all([th.isFinished for th in self.smThreads])
+
+    @property
+    def storable(self):
+        return any([camExp.storable for camExp in self.camExp])
+
+    @property
+    def clearedExp(self):
+        return [camExp for camExp in self.camExp if camExp.cleared]
+
+    @property
+    def threads(self):
+        return self.smThreads
+
+    def instantiate(self, cams):
+        """ Create underlying specModuleExposure threads.  """
+        return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
+
+    def abort(self, cmd, reason="ExposureAborted()"):
+        """ Abort current exposure. """
+        self.doAbort = True
+        self.failures.add(reason)
+
+        for thread in self.threads:
+            thread.abort(cmd)
+
+    def finish(self, cmd):
+        """ Finish current exposure. """
+        self.doFinish = True
+        for thread in self.threads:
+            thread.finish(cmd)
+
+    def start(self, cmd, visit):
+        """ Start all spectrograph module exposures. """
+        for thread in self.smThreads:
+            thread.expose(cmd, visit)
+
+    def exit(self):
+        """ Free up all resources. """
+        for thread in self.threads:
+            thread.exit()
+
+        self.threads.clear()
+
+    def store(self, cmd, visit):
+        """Store Exposure in sps_visit table in opdb database. """
+        try:
+            utils.insert(opdb.OpDB.url, 'sps_visit',
+                         pd.DataFrame(dict(pfs_visit_id=visit, exp_type=self.exptype), index=[0]))
+        except Exception as e:
+            cmd.warn('text=%s' % self.actor.strTraceback(e))
+
+        frames = [camExp.store() for camExp in self.camExp]
+        return list(filter(None, frames))
+
+
+class DarkExposure(Exposure):
+    """ CaliDarkExposureb object. """
+
+    def __init__(self, *args, **kwargs):
+        Exposure.__init__(self, *args, **kwargs)
+
+    @property
+    def camExp(self):
+        return self.threads
+
+    def instantiate(self, cams):
+        """ Create underlying CcdExposure threads object. """
+        return [CcdExposure(self, cam) for cam in cams]
 
 
 class CcdExposure(QThread):

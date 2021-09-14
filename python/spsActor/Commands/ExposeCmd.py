@@ -5,7 +5,7 @@ from importlib import reload
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from opscore.utility.qstr import qstr
-from spsActor.utils import exposure
+from spsActor.utils import exposure, lampsExposure
 from spsActor.utils.lib import singleShot, wait
 
 reload(exposure)
@@ -77,7 +77,15 @@ class ExposeCmd(object):
             cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
 
-        cls = exposure.DarkExposure if exptype in ['bias', 'dark'] else exposure.Exposure
+        if exptype in ['bias', 'dark']:
+            cls = exposure.DarkExposure
+
+        elif doLamps:
+            cls = lampsExposure.Exposure
+
+        else:
+            cls = exposure.Exposure
+
         exp = cls(self.actor, exptype=exptype, **kwargs)
         self.exp[visit] = exp
 
