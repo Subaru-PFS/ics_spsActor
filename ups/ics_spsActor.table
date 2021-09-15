@@ -1,6 +1,6 @@
-setupRequired(tron_actorcore)
 setupRequired(ics_actorkeys)
 setupRequired(spt_operational_database)
+setupRequired(pfs_utils >=   6.0.5)
 
 pathPrepend(PATH, ${PRODUCT_DIR}/bin)
 pathPrepend(PYTHONPATH, ${PRODUCT_DIR}/python)
