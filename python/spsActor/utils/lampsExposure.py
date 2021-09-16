@@ -101,6 +101,7 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         self.shuttersOpen = 'open' in state
 
         if self.shuttersOpen:
+            self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
             self.exp.sendGoLampsSignal()
 
     def exit(self):
@@ -136,6 +137,8 @@ class Exposure(exposure.Exposure):
                 raise exception.ExposureAborted
 
             wait()
+
+        self.actor.bcast.debug(f'text="{self.lampsThread.lampsActor} is ready !!!"')
 
     def sendGoLampsSignal(self):
         """ Start all spectrograph module exposures. """
