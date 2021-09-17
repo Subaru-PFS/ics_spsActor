@@ -93,7 +93,8 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
     def integrate(self, cmd):
         """ Integrate for both calib and regular exposure """
         self.exp.waitForReadySignal()
-        return exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=self.exp.exptime + 5)
+        shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=self.exp.exptime + 5)
+        return self.exp.exptime, dateobs
 
     def shuttersState(self, keyVar):
         """ Clear all running CcdExposure. """
