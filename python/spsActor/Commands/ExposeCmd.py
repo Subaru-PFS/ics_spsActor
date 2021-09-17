@@ -4,7 +4,6 @@ from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from opscore.utility.qstr import qstr
 from spsActor.utils import exposure, lampsExposure
 from spsActor.utils.lib import singleShot, wait
 
@@ -70,9 +69,6 @@ class ExposeCmd(object):
     def process(self, cmd, visit, exptype, doLamps, **kwargs):
         """Process exposure in another thread """
 
-        def genFileIds(visit, frames):
-            return f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}"""
-
         if visit in self.exp.keys():
             cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
@@ -90,19 +86,14 @@ class ExposeCmd(object):
         self.exp[visit] = exp
 
         try:
-            exp.start(cmd, visit)
-
-            while not exp.isFinished:
-                wait()
+            fileIds = exp.waitForCompletion(cmd, visit=visit)
 
             if any(exp.clearedExp):
-                if exp.storable:
-                    frames = exp.store(cmd, visit)
-                    cmd.warn(genFileIds(visit, frames))
+                if fileIds:
+                    cmd.warn(fileIds)
                 cmd.fail(f'text="{exp.failures.format()}"')
             else:
-                frames = exp.store(cmd, visit)
-                cmd.finish(genFileIds(visit, frames))
+                cmd.finish(fileIds)
 
         finally:
             exp.exit()

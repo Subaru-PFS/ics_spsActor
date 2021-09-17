@@ -5,6 +5,7 @@ import pandas as pd
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from opdb import utils, opdb
+from opscore.utility.qstr import qstr
 from spsActor.utils.lib import cmdVarToKeys, camPerSpec, wait, threaded, fromisoformat, interpretFailure
 
 
@@ -129,6 +130,7 @@ class SpecModuleExposure(QThread):
 class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
+
     def __init__(self, actor, exptype, exptime, cams, doTest=False):
         exptype = 'test' if doTest else exptype
         self.doAbort = False
@@ -163,6 +165,21 @@ class Exposure(object):
     def instantiate(self, cams):
         """ Create underlying specModuleExposure threads.  """
         return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
+
+    def waitForCompletion(self, cmd, visit):
+        """ Create underlying specModuleExposure threads.  """
+
+        def genFileIds(visit, frames):
+            return f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}"""
+
+        self.start(cmd, visit)
+
+        while not self.isFinished:
+            wait()
+
+        if self.storable:
+            frames = self.store(cmd, visit)
+            return genFileIds(visit, frames)
 
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure. """

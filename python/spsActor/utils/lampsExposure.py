@@ -127,13 +127,19 @@ class Exposure(exposure.Exposure):
         self.lampsThread.start(cmd)
         exposure.Exposure.start(self, cmd, visit=visit)
 
+    def waitForCompletion(self, cmd, visit):
+        """ Create underlying specModuleExposure threads.  """
+        fileIds = exposure.Exposure.waitForCompletion(self, cmd, visit=visit)
+        self.lampsThread.abort(cmd)
+        return fileIds
+
     def waitForReadySignal(self):
         """ Free up all resources """
         while not self.lampsThread.isReady:
-            if self.exp.doFinish:
+            if self.doFinish:
                 raise exception.EarlyFinish
 
-            if self.exp.doAbort:
+            if self.doAbort:
                 raise exception.ExposureAborted
 
             wait()
