@@ -31,7 +31,7 @@ class LampsControl(QThread):
 
     def _go(self, cmd):
         """ Create underlying SmExposure threads.  """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go', timeLim=180)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go', timeLim=self.exp.exptime + 60)
 
         if cmdVar.didFail:
             raise exception.LampsFailed(self.lampsActor, interpretFailure(cmdVar))
