@@ -5,7 +5,7 @@ from importlib import reload
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from spsActor.utils import exposure, lampsExposure
-from spsActor.utils.lib import singleShot, wait
+from spsActor.utils.lib import singleShot
 
 reload(exposure)
 
@@ -25,7 +25,8 @@ class ExposeCmd(object):
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doTest]', self.doExposure),
+            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doTest]',
+             self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
@@ -61,12 +62,15 @@ class ExposeCmd(object):
 
         doLamps = 'doLamps' in cmdKeys
         doTest = 'doTest' in cmdKeys
+        doLampsTiming = 'doShutterTiming' not in cmdKeys
 
         self.actor.requireModels(models, cmd=cmd)
-        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doTest=doTest)
+        self.process(cmd, visit,
+                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
+                     doTest=doTest)
 
     @singleShot
-    def process(self, cmd, visit, exptype, doLamps, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
         """Process exposure in another thread """
 
         if visit in self.exp.keys():
@@ -77,7 +81,10 @@ class ExposeCmd(object):
             cls = exposure.DarkExposure
 
         elif doLamps:
-            cls = lampsExposure.Exposure
+            if doLampsTiming:
+                cls = lampsExposure.Exposure
+            else:
+                cls = lampsExposure.ShutterExposure
 
         else:
             cls = exposure.Exposure

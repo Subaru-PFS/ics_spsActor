@@ -1,3 +1,5 @@
+import time
+
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from spsActor.utils import exposure
@@ -78,6 +80,33 @@ class LampsControl(QThread):
         pass
 
 
+class ShutterControlled(LampsControl):
+    waitBeforeOpening = 2
+
+    @threaded
+    def start(self, cmd):
+        """ Create underlying SmExposure threads.  """
+        try:
+            self._waitForReadySignal(cmd)
+            self.waitForGoSignal()
+            self.cmdVar = self._go(cmd)
+
+        except Exception as e:
+            self.abort(cmd)
+            self.exp.abort(cmd, reason=str(e))
+
+    def _go(self, cmd):
+        """ Create underlying SmExposure threads.  """
+        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait', timeLim=10)
+
+        if cmdVar.didFail:
+            raise exception.LampsFailed(self.lampsActor, interpretFailure(cmdVar))
+
+        time.sleep(ShutterControlled.waitBeforeOpening)
+
+        return cmdVar
+
+
 class SpecModuleExposure(exposure.SpecModuleExposure):
     """ Placeholder to handle spectograph module cmd threading. """
 
@@ -93,7 +122,8 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
     def integrate(self, cmd):
         """ Integrate for both calib and regular exposure """
         self.exp.waitForReadySignal()
-        shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=self.exp.exptime + 5)
+        shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd,
+                                                                     shutterTime=self.exp.exptime + self.exp.shutterOverHead)
         return self.exp.exptime, dateobs
 
     def shuttersState(self, keyVar):
@@ -112,12 +142,14 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
 
 class Exposure(exposure.Exposure):
+    shutterOverHead = 5
     SpecModuleExposureClass = SpecModuleExposure
+    LampControlClass = LampsControl
 
     def __init__(self, *args, **kwargs):
         exposure.Exposure.__init__(self, *args, **kwargs)
         [lightSource] = list(set(th.lightSource() for th in self.smThreads))
-        self.lampsThread = LampsControl(self, lampsActor=lightSource.lampsActor)
+        self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
 
     @property
     def threads(self):
@@ -151,3 +183,18 @@ class Exposure(exposure.Exposure):
         """ Start all spectrograph module exposures. """
         if all([thread.shuttersOpen for thread in self.smThreads]):
             self.lampsThread.goSignal = True
+
+
+class ShutterExposure(Exposure):
+    shutterOverHead = 0
+    LampControlClass = ShutterControlled
+
+    def waitForReadySignal(self):
+        self.sendGoLampsSignal()
+        return Exposure.waitForReadySignal(self)
+
+    def sendGoLampsSignal(self):
+        if all(sum([thread.currently('integrating') for thread in self.smThreads], [])):
+            self.lampsThread.goSignal = True
+
+
