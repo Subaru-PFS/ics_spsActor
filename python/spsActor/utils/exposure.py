@@ -1,11 +1,10 @@
 from datetime import datetime as dt
 from datetime import timedelta
 
-import pandas as pd
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
-from opdb import utils, opdb
 from opscore.utility.qstr import qstr
+from pfs.utils.opdb import opDB
 from spsActor.utils.lib import cmdVarToKeys, camPerSpec, wait, threaded, fromisoformat, interpretFailure
 
 
@@ -210,8 +209,7 @@ class Exposure(object):
     def store(self, cmd, visit):
         """Store Exposure in sps_visit table in opdb database. """
         try:
-            utils.insert(opdb.OpDB.url, 'sps_visit',
-                         pd.DataFrame(dict(pfs_visit_id=visit, exp_type=self.exptype), index=[0]))
+            opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
         except Exception as e:
             cmd.warn('text=%s' % self.actor.strTraceback(e))
 
@@ -356,10 +354,10 @@ class CcdExposure(QThread):
         cam = self.actor.specFromNum(specNum=specNum, armNum=armNum)
 
         try:
-            utils.insert(opdb.OpDB.url, 'sps_exposure',
-                         pd.DataFrame(dict(pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
-                                           time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end,
-                                           beam_config_date=float(beamConfigDate)), index=[0]))
+            opDB.insert('sps_exposure',
+                        pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
+                        time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end,
+                        beam_config_date=float(beamConfigDate))
             return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
