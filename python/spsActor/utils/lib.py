@@ -1,19 +1,30 @@
+import re
 import time
+from actorcore.QThread import QThread
 from datetime import datetime as dt
 from functools import partial
-import re
-from actorcore.QThread import QThread
+
+
+def pullOutException(trace):
+    start = re.search("(?<=command failed: )", trace).end()
+    end = re.search("(?<= in )(.*)(?= at )", trace).end()
+    return trace[start:end]
+
 
 def interpretFailure(cmdVar):
     cmdKeys = cmdVarToKeys(cmdVar)
     if 'Timeout' in cmdKeys:
         return f"TimeoutError('reached in {cmdVar.timeLim} secs')"
+    elif 'NoTarget' in cmdKeys:
+        return 'actor is not connected'
     elif 'text' in cmdKeys:
         trace = cmdKeys['text'].values[0]
-        start = re.search("(?<=command failed: )", trace).end()
-        end = re.search("(?<= in )(.*)(?= at )", trace).end()
-        return trace[start:end]
+        try:
+            pullOutException(trace)
+        except:
+            return trace
     else:
+        print(cmdKeys)
         return 'unknown reason'
 
 
