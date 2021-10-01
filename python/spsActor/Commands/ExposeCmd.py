@@ -4,9 +4,8 @@ from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from opscore.utility.qstr import qstr
-from spsActor.utils import exposure
-from spsActor.utils import singleShot, wait
+from spsActor.utils import exposure, lampsExposure
+from spsActor.utils.lib import singleShot
 
 reload(exposure)
 
@@ -26,7 +25,8 @@ class ExposeCmd(object):
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doTest]', self.doExposure),
+            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doTest]',
+             self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
@@ -62,35 +62,45 @@ class ExposeCmd(object):
 
         doLamps = 'doLamps' in cmdKeys
         doTest = 'doTest' in cmdKeys
+        doLampsTiming = 'doShutterTiming' not in cmdKeys
 
         self.actor.requireModels(models, cmd=cmd)
-        self.process(cmd, visit, exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doTest=doTest)
+        self.process(cmd, visit,
+                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
+                     doTest=doTest)
 
     @singleShot
-    def process(self, cmd, visit, exptype, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
         """Process exposure in another thread """
+
         if visit in self.exp.keys():
             cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
 
-        cls = exposure.Calib if exptype in ['bias', 'dark'] else exposure.Exposure
+        if exptype in ['bias', 'dark']:
+            cls = exposure.DarkExposure
+
+        elif doLamps:
+            if doLampsTiming:
+                cls = lampsExposure.Exposure
+            else:
+                cls = lampsExposure.ShutterExposure
+
+        else:
+            cls = exposure.Exposure
+
         exp = cls(self.actor, exptype=exptype, **kwargs)
         self.exp[visit] = exp
 
         try:
-            exp.start(cmd, visit)
+            fileIds = exp.waitForCompletion(cmd, visit=visit)
 
-            while not exp.isFinished:
-                wait()
-
-            if exp.cleared:
-                if exp.aborted:
-                    raise RuntimeError('abort exposure requested...')
-                else:
-                    raise RuntimeError('exposure failed...')
-
-            frames = exp.store(cmd, visit)
-            cmd.finish(f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}""")
+            if any(exp.clearedExp):
+                if fileIds:
+                    cmd.warn(fileIds)
+                cmd.fail(f'text="{exp.failures.format()}"')
+            else:
+                cmd.finish(fileIds)
 
         finally:
             exp.exit()
