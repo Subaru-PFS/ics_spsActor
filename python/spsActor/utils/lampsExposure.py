@@ -1,6 +1,5 @@
-import time
-
 import spsActor.utils.exception as exception
+import time
 from actorcore.QThread import QThread
 from spsActor.utils import exposure
 from spsActor.utils.lib import wait, threaded, interpretFailure
@@ -23,7 +22,7 @@ class LampsControl(QThread):
         return self.cmdVar is not None
 
     def _waitForReadySignal(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Wait for ready signal from lampActor(pfilamps, dcb..).  """
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='waitForReadySignal', timeLim=180)
 
         if cmdVar.didFail:
@@ -32,7 +31,7 @@ class LampsControl(QThread):
         return cmdVar
 
     def _go(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Send go command to lampActor. """
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go', timeLim=self.exp.exptime + 60)
 
         if cmdVar.didFail:
@@ -42,7 +41,7 @@ class LampsControl(QThread):
 
     @threaded
     def start(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Full lamp control routine.  """
         try:
             self.cmdVar = self._waitForReadySignal(cmd)
             self.waitForGoSignal()
@@ -54,7 +53,7 @@ class LampsControl(QThread):
             self.exp.abort(cmd, reason=str(e))
 
     def waitForGoSignal(self):
-        """ Create underlying SmExposure threads.  """
+        """ Wait for go signal from the shutters.  """
         while not self.goSignal:
             if self.exp.doFinish:
                 raise exception.EarlyFinish
@@ -65,11 +64,15 @@ class LampsControl(QThread):
             wait()
 
     def abort(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Send stop command. """
         if self.aborted is None:
             self.aborted = False
             self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
             self.aborted = True
+
+    def declareDone(self, cmd):
+        """ Declare exposure is over.  """
+        self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
 
     def finish(self, cmd):
         """ Just a prototype. """
@@ -81,11 +84,12 @@ class LampsControl(QThread):
 
 
 class ShutterControlled(LampsControl):
+    """ Placeholder to handle lamp cmd threading, in that class exposure time is controlled by shutters. """
     waitBeforeOpening = 2
 
     @threaded
     def start(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Full lamp control routine.  """
         try:
             self._waitForReadySignal(cmd)
             self.waitForGoSignal()
@@ -96,7 +100,7 @@ class ShutterControlled(LampsControl):
             self.exp.abort(cmd, reason=str(e))
 
     def _go(self, cmd):
-        """ Create underlying SmExposure threads.  """
+        """ Send go command, no blocking.  """
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait', timeLim=10)
 
         if cmdVar.didFail:
@@ -120,14 +124,14 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         return self.exp.actor.spsConfig.specModules[self.specName].lightSource
 
     def integrate(self, cmd):
-        """ Integrate for both calib and regular exposure """
+        """ Command shutters to expose with given overhead. """
         self.exp.waitForReadySignal()
         shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd,
                                                                      shutterTime=self.exp.exptime + self.exp.shutterOverHead)
         return self.exp.exptime, dateobs
 
     def shuttersState(self, keyVar):
-        """ Clear all running CcdExposure. """
+        """ Shutters state callback, send go signal whenever open. """
         state = keyVar.getValue(doRaise=False)
         self.shuttersOpen = 'open' in state
 
@@ -142,7 +146,8 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
 
 class Exposure(exposure.Exposure):
-    shutterOverHead = 5
+    """ Lamp controlled exposure time """
+    shutterOverHead = 10
     SpecModuleExposureClass = SpecModuleExposure
     LampControlClass = LampsControl
 
@@ -156,18 +161,18 @@ class Exposure(exposure.Exposure):
         return self.smThreads + [self.lampsThread]
 
     def start(self, cmd, visit):
-        """ Start all spectrograph module exposures. """
+        """ Full exposure routine. """
         self.lampsThread.start(cmd)
         exposure.Exposure.start(self, cmd, visit=visit)
 
     def waitForCompletion(self, cmd, visit):
-        """ Create underlying specModuleExposure threads.  """
+        """ Wait for exposure completion.  """
         fileIds = exposure.Exposure.waitForCompletion(self, cmd, visit=visit)
-        self.lampsThread.abort(cmd)
+        self.lampsThread.declareDone(cmd)
         return fileIds
 
     def waitForReadySignal(self):
-        """ Free up all resources """
+        """ Wait ready signal from lampActor. """
         while not self.lampsThread.isReady:
             if self.doFinish:
                 raise exception.EarlyFinish
@@ -180,12 +185,13 @@ class Exposure(exposure.Exposure):
         self.actor.bcast.debug(f'text="{self.lampsThread.lampsActor} is ready !!!"')
 
     def sendGoLampsSignal(self):
-        """ Start all spectrograph module exposures. """
+        """ Wait for all shutters to be opened to send go signal. """
         if all([thread.shuttersOpen for thread in self.smThreads]):
             self.lampsThread.goSignal = True
 
 
 class ShutterExposure(Exposure):
+    """ Placeholder to handle spectograph module cmd threading. """
     shutterOverHead = 0
     LampControlClass = ShutterControlled
 
@@ -196,5 +202,3 @@ class ShutterExposure(Exposure):
     def sendGoLampsSignal(self):
         if all(sum([thread.currently('integrating') for thread in self.smThreads], [])):
             self.lampsThread.goSignal = True
-
-
