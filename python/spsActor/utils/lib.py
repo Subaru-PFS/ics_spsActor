@@ -20,11 +20,11 @@ def interpretFailure(cmdVar):
     elif 'text' in cmdKeys:
         trace = cmdKeys['text'].values[0]
         try:
-            pullOutException(trace)
+            failure = pullOutException(trace)
         except:
-            return trace
+            failure = trace
+        return failure
     else:
-        print(cmdKeys)
         return 'unknown reason'
 
 
