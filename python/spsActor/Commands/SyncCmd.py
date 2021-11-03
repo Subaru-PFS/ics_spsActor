@@ -21,7 +21,7 @@ class SyncCmd(object):
             ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<sm>] [<cams>]', self.slitDither),
             ('slit', 'home [<sm>] [<cams>]', self.slitHome),
             ('rda', '@moveTo @(low|med) [<sm>] [<cams>]', self.rdaMove),
-            ('bia', '@on [strobe] [<power>] [<period>] [<sm>] [<cams>]', self.biaSwitchOn),
+            ('bia', '@on [strobe] [<power>] [<duty>] [<period>] [<sm>] [<cams>]', self.biaSwitchOn),
             ('bia', '@off [<sm>] [<cams>]', self.biaSwitchOff),
             ('bia', '@strobe @off [<sm>] [<cams>]', self.biaSwitchOff),
 
@@ -57,6 +57,7 @@ class SyncCmd(object):
                                         keys.Key('warmingTime', types.Float(), help='customizable warming time'),
                                         keys.Key('period', types.Int(), help='bia period'),
                                         keys.Key("power", types.Float(), help='power level to set (0..100)'),
+                                        keys.Key("duty", types.Int(), help='strobe duty cycle (0..100)'),
                                         )
 
     @property
@@ -139,10 +140,12 @@ class SyncCmd(object):
 
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
         period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
+        duty = cmdKeys['duty'].values[0] if 'duty' in cmdKeys else None
         strobe = 'strobe' in cmdKeys
         specNums = self.findSpecNums(cmdKeys)
 
-        syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums, strobe=strobe, power=power, period=period)
+        syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums,
+                                 strobe=strobe, power=power, period=period, duty=duty)
         syncCmd.process(cmd)
 
     def biaSwitchOff(self, cmd):
