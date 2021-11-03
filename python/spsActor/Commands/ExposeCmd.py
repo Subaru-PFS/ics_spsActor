@@ -55,16 +55,14 @@ class ExposeCmd(object):
         exptime = cmdKeys['exptime'].values[0] if exptype is not 'bias' else 0
         visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
 
-        cams = self.actor.cams
-        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else cams
+        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else None
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
-        models = [f'ccd_{cam}' for cam in cams] + list(set([f'enu_sm{i}' for i in [int(cam[-1]) for cam in cams]]))
+        cams = self.actor.spsConfig.identify(cams=cams)
 
         doLamps = 'doLamps' in cmdKeys
         doTest = 'doTest' in cmdKeys
         doLampsTiming = 'doShutterTiming' not in cmdKeys
 
-        self.actor.requireModels(models, cmd=cmd)
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
                      doTest=doTest)

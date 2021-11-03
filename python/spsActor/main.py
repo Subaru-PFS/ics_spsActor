@@ -6,15 +6,11 @@ import time
 
 import actorcore.ICC
 from pfs.utils.instdata import InstData
-from pfs.utils.spectroIds import SpectroIds
 from pfs.utils.sps.config import SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
-from spsActor.utils.lib import parse
 
 
 class SpsActor(actorcore.ICC.ICC):
-    validCams = [SpectroIds(f'{arm}{specNum}') for arm in SpectroIds.validArms for specNum in SpectroIds.validModules]
-
     def __init__(self, name, productName=None, configFile=None, logLevel=logging.INFO):
         # This sets up the connections to/from the hub, the logger, and the twisted reactor.
         #
@@ -29,15 +25,12 @@ class SpsActor(actorcore.ICC.ICC):
         self.instData = InstData(self)
         self.spsConfig = None
 
-    @property
-    def cams(self):
-        return [c.strip() for c in self.config.get('sps', 'cams').split(',')]
-
     def crudeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
-        cmdStr = parse(cmdStr, **kwargs)
-        return self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd)
+        """ crude actor call wrapper. """
+        return self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd, **kwargs)
 
     def safeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
+        """ call and throw warnings. """
         cmdVar = self.crudeCall(cmd, actor, cmdStr, timeLim=timeLim, **kwargs)
 
         if cmdVar.didFail:
@@ -59,22 +52,11 @@ class SpsActor(actorcore.ICC.ICC):
             time.sleep(1)
 
     def getVisit(self, cmd):
+        """ Get visit from gen2 or get your own basically. """
         return fetchVisitFromGen2(self, cmd)
 
-    def specFromNum(self, specNum, armNum):
-        [cam] = [cam for cam in self.validCams if (cam.specNum == int(specNum) and cam.armNum == int(armNum))]
-        return cam
-
-    def getMask(self, frames):
-        mask = 0
-
-        for cam in self.validCams:
-            bit = cam.camId - 1
-            mask |= (1 << bit if cam.camName in frames else 0)
-
-        return mask
-
     def genSpsKeys(self, cmd):
+        """ Generate sps config keywords. """
         spsConfig = SpsConfig.fromConfig(self)
 
         cmd.inform(f"""specModules={','.join(spsConfig.specModules.keys())}""")
