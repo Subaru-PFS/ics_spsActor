@@ -1,8 +1,10 @@
-import spsActor.utils.exception as exception
 import time
+
+import spsActor.utils.cmd as cmdUtils
+import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from spsActor.utils import exposure
-from spsActor.utils.lib import wait, threaded, interpretFailure
+from spsActor.utils.lib import wait, threaded
 
 
 class LampsControl(QThread):
@@ -26,7 +28,7 @@ class LampsControl(QThread):
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='waitForReadySignal', timeLim=180)
 
         if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, interpretFailure(cmdVar))
+            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
 
         return cmdVar
 
@@ -35,7 +37,7 @@ class LampsControl(QThread):
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go', timeLim=self.exp.exptime + 60)
 
         if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, interpretFailure(cmdVar))
+            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
 
         return cmdVar
 
@@ -104,7 +106,7 @@ class ShutterControlled(LampsControl):
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait', timeLim=10)
 
         if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, interpretFailure(cmdVar))
+            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
 
         time.sleep(ShutterControlled.waitBeforeOpening)
 

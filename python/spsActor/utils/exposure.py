@@ -1,11 +1,13 @@
 from datetime import datetime as dt
 from datetime import timedelta
 
+import spsActor.utils.cmd as cmdUtils
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from opscore.utility.qstr import qstr
 from pfs.utils.opdb import opDB
-from spsActor.utils.lib import cmdVarToKeys, camPerSpec, wait, threaded, fromisoformat, interpretFailure
+from spsActor.utils.ids import SpsIds as idsUtils
+from spsActor.utils.lib import wait, threaded, fromisoformat
 
 
 class SpecModuleExposure(QThread):
@@ -66,15 +68,16 @@ class SpecModuleExposure(QThread):
         shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
         shutters = self.getShutters()
-        cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enu, cmdStr=f'shutters expose {shutters}',
-                                          exptime=shutterTime, timeLim=shutterTime + 2)
+        cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enu,
+                                          cmdStr=f'shutters expose {shutters} exptime={shutterTime}',
+                                          timeLim=shutterTime + 2)
         if self.exp.doAbort:
             raise exception.ExposureAborted
 
         if cmdVar.didFail:
-            raise exception.ShuttersFailed(self.specName, interpretFailure(cmdVar))
+            raise exception.ShuttersFailed(self.specName, cmdUtils.interpretFailure(cmdVar))
 
-        keys = cmdVarToKeys(cmdVar)
+        keys = cmdUtils.cmdVarToKeys(cmdVar)
 
         exptime = float(keys['exptime'].values[0])
         dateobs = fromisoformat(keys['dateobs'].values[0])
@@ -163,13 +166,13 @@ class Exposure(object):
 
     def instantiate(self, cams):
         """ Create underlying specModuleExposure threads.  """
-        return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in camPerSpec(cams).items()]
+        return [self.SpecModuleExposureClass(self, smId, arms) for smId, arms in idsUtils.camToArmDict(cams).items()]
 
     def waitForCompletion(self, cmd, visit):
         """ Create underlying specModuleExposure threads.  """
 
         def genFileIds(visit, frames):
-            return f"""fileIds={visit},{qstr(';'.join(frames))},0x{self.actor.getMask(frames):04x}"""
+            return f"""fileIds={visit},{qstr(';'.join(frames))},0x{idsUtils.getMask(frames):04x}"""
 
         self.start(cmd, visit)
 
@@ -265,7 +268,7 @@ class CcdExposure(QThread):
         """ Send ccd wipe command and handle reply """
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr='wipe', timeLim=30)
         if cmdVar.didFail:
-            raise exception.WipeFailed(self.ccd, interpretFailure(cmdVar))
+            raise exception.WipeFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
 
         return dt.utcnow()
 
@@ -278,11 +281,12 @@ class CcdExposure(QThread):
         exptime = darktime if exptime is None else exptime
         exptime = round(exptime, 3)
 
-        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype}',
-                                      visit=visit, exptime=exptime, darktime=darktime, obstime=dateobs.isoformat())
+        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
+                                                                  f'visit={visit} exptime={exptime} '
+                                                                  f'darktime={darktime} obstime={dateobs.isoformat()}')
 
         if cmdVar.didFail:
-            raise exception.ReadFailed(self.ccd, interpretFailure(cmdVar))
+            raise exception.ReadFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
 
         self.readVar = cmdVar
         return exptime
@@ -348,10 +352,10 @@ class CcdExposure(QThread):
         if not self.storable:
             return
 
-        keys = cmdVarToKeys(cmdVar=self.readVar)
+        keys = cmdUtils.cmdVarToKeys(cmdVar=self.readVar)
         visit, beamConfigDate = keys['beamConfigDate'].values
         camStr, dateDir, visit, specNum, armNum = keys['spsFileIds'].values
-        cam = self.actor.specFromNum(specNum=specNum, armNum=armNum)
+        cam = idsUtils.camFromNums(specNum=specNum, armNum=armNum)
 
         try:
             opDB.insert('sps_exposure',
