@@ -8,6 +8,7 @@ import actorcore.ICC
 from pfs.utils.instdata import InstData
 from pfs.utils.sps.config import SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
+from spsActor.utils.callbacks import MetaStatus
 
 
 class SpsActor(actorcore.ICC.ICC):
@@ -24,6 +25,7 @@ class SpsActor(actorcore.ICC.ICC):
         self.everConnected = False
         self.instData = InstData(self)
         self.spsConfig = None
+        self.metaStatus = MetaStatus(self)
 
     def crudeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
         """ crude actor call wrapper. """
@@ -55,6 +57,11 @@ class SpsActor(actorcore.ICC.ICC):
         """ Get visit from gen2 or get your own basically. """
         return fetchVisitFromGen2(self, cmd)
 
+    def reloadConfiguration(self, cmd):
+        """ when reloading configuration file, reload spsConfig and status callbacks. """
+        self.genSpsKeys(cmd)
+        self.metaStatus.attachCallbacks()
+
     def genSpsKeys(self, cmd):
         """ Generate sps config keywords. """
         spsConfig = SpsConfig.fromConfig(self)
@@ -79,6 +86,7 @@ class SpsActor(actorcore.ICC.ICC):
 
             self.everConnected = True
             self.requireModels(['gen2'])
+            self.reloadConfiguration(self.bcast)
 
 
 def main():
