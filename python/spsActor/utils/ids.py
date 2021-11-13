@@ -1,4 +1,4 @@
-from pfs.utils.spectroIds import SpectroIds
+from ics.utils.sps.spectroIds import SpectroIds
 
 
 class SpsIds(object):

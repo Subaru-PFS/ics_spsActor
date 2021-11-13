@@ -5,8 +5,8 @@ import logging
 import time
 
 import actorcore.ICC
-from pfs.utils.instdata import InstData
-from pfs.utils.sps.config import SpsConfig
+from ics.utils.instdata import InstData
+from ics.utils.sps.config import SpsConfig
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils.callbacks import MetaStatus
 

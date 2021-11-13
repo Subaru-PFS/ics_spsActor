@@ -5,7 +5,7 @@ from importlib import reload
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 from spsActor.utils import exposure, lampsExposure
-from spsActor.utils.lib import singleShot
+from ics.utils.threading import singleShot
 
 reload(exposure)
 

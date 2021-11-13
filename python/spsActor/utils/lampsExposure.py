@@ -1,10 +1,11 @@
 import time
 
-import spsActor.utils.cmd as cmdUtils
+import ics.utils.cmd as cmdUtils
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
+from ics.utils.threading import threaded
 from spsActor.utils import exposure
-from spsActor.utils.lib import wait, threaded
+from spsActor.utils.lib import wait
 
 
 class LampsControl(QThread):

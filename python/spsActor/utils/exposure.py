@@ -1,13 +1,14 @@
 from datetime import datetime as dt
 from datetime import timedelta
 
-import spsActor.utils.cmd as cmdUtils
+import ics.utils.cmd as cmdUtils
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
+from ics.utils.opdb import opDB
+from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
-from pfs.utils.opdb import opDB
 from spsActor.utils.ids import SpsIds as idsUtils
-from spsActor.utils.lib import wait, threaded, fromisoformat
+from spsActor.utils.lib import wait, fromisoformat
 
 
 class SpecModuleExposure(QThread):
