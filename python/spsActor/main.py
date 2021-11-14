@@ -29,7 +29,7 @@ class SpsActor(actorcore.ICC.ICC):
 
     def crudeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
         """ crude actor call wrapper. """
-        return self.cmdr.call(actor=actor, cmdStr=cmdStr, timeLim=timeLim, forUserCmd=cmd, **kwargs)
+        return self.cmdr.call(actor=actor, cmdStr=cmdStr.strip(), timeLim=timeLim, forUserCmd=cmd, **kwargs)
 
     def safeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):
         """ call and throw warnings. """
