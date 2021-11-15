@@ -134,15 +134,17 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, exptype, exptime, cams, doTest=False):
+    def __init__(self, actor, exptype, exptime, cams, doTest=False, window=False):
         exptype = 'test' if doTest else exptype
         self.doAbort = False
         self.doFinish = False
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
-        self.failures = exception.Failures()
 
+        self.wipeFlavour, self.readFlavour = self.defineCCDControl(window)
+
+        self.failures = exception.Failures()
         self.smThreads = self.instantiate(cams)
 
     @property
@@ -164,6 +166,18 @@ class Exposure(object):
     @property
     def threads(self):
         return self.smThreads
+
+    def defineCCDControl(self, windows):
+        """ Declare kind of ccd wipe and ccd reads.  """
+        if windows:
+            row0, nrows = windows
+            wipeFlavour = 'nrows=0'
+            readFlavour = f'row0={row0} nrows={nrows}'
+        else:
+            wipeFlavour = ''
+            readFlavour = ''
+
+        return wipeFlavour, readFlavour
 
     def instantiate(self, cams):
         """ Create underlying specModuleExposure threads.  """
@@ -267,7 +281,7 @@ class CcdExposure(QThread):
 
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr='wipe', timeLim=30)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.exp.wipeFlavour}', timeLim=30)
         if cmdVar.didFail:
             raise exception.WipeFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
 
@@ -284,7 +298,8 @@ class CcdExposure(QThread):
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
                                                                   f'visit={visit} exptime={exptime} '
-                                                                  f'darktime={darktime} obstime={dateobs.isoformat()}')
+                                                                  f'darktime={darktime} obstime={dateobs.isoformat()} '
+                                                                  f'{self.exp.readFlavour}')
 
         if cmdVar.didFail:
             raise exception.ReadFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))

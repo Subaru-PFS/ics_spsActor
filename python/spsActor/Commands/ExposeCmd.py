@@ -4,8 +4,8 @@ from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
-from spsActor.utils import exposure, lampsExposure
 from ics.utils.threading import singleShot
+from spsActor.utils import exposure, lampsExposure
 
 reload(exposure)
 
@@ -25,9 +25,9 @@ class ExposeCmd(object):
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doTest]',
-             self.doExposure),
-            ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest]', self.doExposure),
+            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doTest] '
+                       f'[<window>]', self.doExposure),
+            ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest] [<window>]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
             ('exposure', 'status', self.status)
@@ -42,6 +42,8 @@ class ExposeCmd(object):
                                                  help='list of camera to take exposure from'),
                                         keys.Key("visit", types.Int(),
                                                  help='PFS visit id'),
+                                        keys.Key("window", types.Int() * (1, 2),
+                                                 help='first row, total number of rows to read'),
                                         )
 
     def doExposure(self, cmd):
@@ -63,9 +65,11 @@ class ExposeCmd(object):
         doTest = 'doTest' in cmdKeys
         doLampsTiming = 'doShutterTiming' not in cmdKeys
 
+        window = cmdKeys['window'].values if 'window' in cmdKeys else False
+
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
-                     doTest=doTest)
+                     doTest=doTest, window=window)
 
     @singleShot
     def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
