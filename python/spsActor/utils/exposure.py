@@ -22,6 +22,11 @@ class SpecModuleExposure(QThread):
         self.enu = f'enu_{self.specName}'
         self.camExp = [CcdExposure(exp, f'{arm}{smId}') for arm in arms]
 
+        # add callback for shutters state, useful to fire process asynchronously.
+        self.shuttersKeyVar = self.exp.actor.models[self.enu].keyVarDict['shutters']
+        self.shuttersKeyVar.addCallback(self.shuttersState)
+        self.shuttersOpen = None
+
         QThread.__init__(self, exp.actor, self.specName)
         self.start()
 
@@ -106,6 +111,19 @@ class SpecModuleExposure(QThread):
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
 
+    def shuttersState(self, keyVar):
+        """ Shutters state callback, call shuttersOpenCB() whenever open. """
+        state = keyVar.getValue(doRaise=False)
+        self.shuttersOpen = 'open' in state
+
+        if self.shuttersOpen:
+            self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
+            self.shuttersOpenCB()
+
+    def shuttersOpenCB(self):
+        """ callback called whenenever shutters are opened. """
+        pass
+
     def clearExposure(self, cmd):
         """ Clear all running CcdExposure. """
         for camExp in self.runExp:
@@ -122,7 +140,10 @@ class SpecModuleExposure(QThread):
             self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure finish')
 
     def exit(self):
-        """ Free up all resources """
+        """ Free up all resources. """
+        # remove shutters callback.
+        self.shuttersKeyVar.removeCallback(self.shuttersState)
+
         for camExp in self.camExp:
             camExp.exit()
 
@@ -135,13 +156,16 @@ class Exposure(object):
     SpecModuleExposureClass = SpecModuleExposure
 
     def __init__(self, actor, exptype, exptime, cams, doTest=False, window=False):
+        # force exptype == test.
         exptype = 'test' if doTest else exptype
+
         self.doAbort = False
         self.doFinish = False
         self.actor = actor
         self.exptype = exptype
         self.exptime = exptime
 
+        # Define how ccds are wiped and read.
         self.wipeFlavour, self.readFlavour = self.defineCCDControl(window)
 
         self.failures = exception.Failures()

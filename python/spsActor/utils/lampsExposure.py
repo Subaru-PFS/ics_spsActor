@@ -8,9 +8,6 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
     def __init__(self, *args, **kwargs):
         exposure.SpecModuleExposure.__init__(self, *args, **kwargs)
-        self.shuttersKeyVar = self.exp.actor.models[self.enu].keyVarDict['shutters']
-        self.shuttersKeyVar.addCallback(self.shuttersState)
-        self.shuttersOpen = None
 
     def lightSource(self):
         return self.exp.actor.spsConfig.specModules[self.specName].lightSource
@@ -25,19 +22,9 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=shutterTime)
         return self.exp.exptime, dateobs
 
-    def shuttersState(self, keyVar):
+    def shuttersOpenCB(self):
         """ Shutters state callback, send go signal whenever open. """
-        state = keyVar.getValue(doRaise=False)
-        self.shuttersOpen = 'open' in state
-
-        if self.shuttersOpen:
-            self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
-            self.exp.sendGoLampsSignal()
-
-    def exit(self):
-        """ Free up all resources """
-        self.shuttersKeyVar.removeCallback(self.shuttersState)
-        exposure.SpecModuleExposure.exit(self)
+        self.exp.sendGoLampsSignal()
 
 
 class Exposure(exposure.Exposure):
