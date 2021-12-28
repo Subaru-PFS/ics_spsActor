@@ -47,8 +47,11 @@ class LampsControl(QThread):
         """ Full lamp control routine.  """
         try:
             self.cmdVar = self._waitForReadySignal(cmd)
+            # Wait for the go signal, namely when all shutters are opened.
             self.waitForGoSignal()
+            # Ask lamp controller to pulse lamps with the configured timing.
             self._go(cmd)
+            # Lamp(s) have been pulsed, exposure can now finish immediately.
             self.exp.finish(cmd)
 
         except Exception as e:
@@ -95,7 +98,9 @@ class ShutterControlled(LampsControl):
         """ Full lamp control routine.  """
         try:
             self._waitForReadySignal(cmd)
+            # Still wait for a go signal from the last shutter thread, namely when detectors are all ready.
             self.waitForGoSignal()
+            # When _go() returns, here without blocking, it declares self.isReady=True, thus the shutters can be opened.
             self.cmdVar = self._go(cmd)
 
         except Exception as e:
@@ -109,6 +114,7 @@ class ShutterControlled(LampsControl):
         if cmdVar.didFail:
             raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
 
+        # Wait for some additional time before opening shutters to be fully safe.
         time.sleep(ShutterControlled.waitBeforeOpening)
 
         return cmdVar
@@ -128,9 +134,12 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
     def integrate(self, cmd):
         """ Command shutters to expose with given overhead. """
+        # Block until the lampThread gives its ready signal.
         self.exp.waitForReadySignal()
-        shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd,
-                                                                     shutterTime=self.exp.exptime + self.exp.shutterOverHead)
+        # shutter time is the exptime + some overhead, the exposure will be finished asap in anycase.
+        shutterTime = self.exp.exptime + self.exp.shutterOverHead
+        # Send proceed with regular shutter integration, the callback will asynchronously give the go to the lamps.
+        shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=shutterTime)
         return self.exp.exptime, dateobs
 
     def shuttersState(self, keyVar):
@@ -165,7 +174,10 @@ class Exposure(exposure.Exposure):
 
     def start(self, cmd, visit):
         """ Full exposure routine. """
+        # Start lamp thread, ready signal will be raised later.
         self.lampsThread.start(cmd)
+        # Normal exposure, except that shutter thread(s) is/are blocked until ready signal.
+        # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
         exposure.Exposure.start(self, cmd, visit=visit)
 
     def waitForCompletion(self, cmd, visit):
@@ -199,9 +211,15 @@ class ShutterExposure(Exposure):
     LampControlClass = ShutterControlled
 
     def waitForReadySignal(self):
+        """ is called by the shutters, that gives the signal to open the shutters."""
         self.sendGoLampsSignal()
-        return Exposure.waitForReadySignal(self)
+        # In this case, lampThread.isReady==True when lampThread._go() returns, eg when lamps are actually turned on.
+        lampsAreTurnedOn = Exposure.waitForReadySignal(self)
+        # Lamps are turned on, shutters can be opened.
+        return lampsAreTurnedOn
 
     def sendGoLampsSignal(self):
+        """ Send go lamp signal only when all shutter threads are ready."""
+        # Basically means that all detectors are ready to receive photons.
         if all(sum([thread.currently('integrating') for thread in self.smThreads], [])):
             self.lampsThread.goSignal = True
