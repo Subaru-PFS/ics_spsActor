@@ -7,6 +7,7 @@ from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
+from spsActor.utils import lampsControl
 from spsActor.utils.ids import SpsIds as idsUtils
 from spsActor.utils.lib import wait, fromisoformat
 
@@ -20,6 +21,9 @@ class SpecModuleExposure(QThread):
         self.arms = arms
         self.specName = f'sm{smId}'
         self.enu = f'enu_{self.specName}'
+        QThread.__init__(self, exp.actor, self.specName)
+
+        # create underlying ccd exposure objects.
         self.camExp = [CcdExposure(exp, f'{arm}{smId}') for arm in arms]
 
         # add callback for shutters state, useful to fire process asynchronously.
@@ -27,8 +31,17 @@ class SpecModuleExposure(QThread):
         self.shuttersKeyVar.addCallback(self.shuttersState)
         self.shuttersOpen = None
 
-        QThread.__init__(self, exp.actor, self.specName)
+        # instantiate IIS control if required.
+        if self.doControlIIS:
+            self.iisControl = lampsControl.IISControl(self.exp, self.enu)
+        else:
+            self.iisControl = None
+
         self.start()
+
+    @property
+    def doControlIIS(self):
+        return self.exp.doIIS
 
     @property
     def runExp(self):
@@ -52,8 +65,7 @@ class SpecModuleExposure(QThread):
 
     def wipe(self, cmd):
         """ Wipe running CcdExposure and wait for integrating state.
-        doFinish==doAbort at the beginning of integration.
-        """
+        Note that doFinish==doAbort at the beginning of integration.  """
         for camExp in self.runExp:
             camExp.wipe(cmd)
 
@@ -70,7 +82,8 @@ class SpecModuleExposure(QThread):
             raise exception.ExposureAborted
 
     def integrate(self, cmd, shutterTime=None):
-        """ Integrate for both calib and regular exposure """
+        """ Integrate for both calib and regular exposure. """
+        # exposure time can have some overhead.
         shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
         shutters = self.getShutters()
@@ -114,15 +127,21 @@ class SpecModuleExposure(QThread):
     def shuttersState(self, keyVar):
         """ Shutters state callback, call shuttersOpenCB() whenever open. """
         state = keyVar.getValue(doRaise=False)
+
+        # track shutters state.
+        self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
+
+        # should cover all cases.
         self.shuttersOpen = 'open' in state
 
         if self.shuttersOpen:
-            self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
             self.shuttersOpenCB()
 
     def shuttersOpenCB(self):
         """ callback called whenenever shutters are opened. """
-        pass
+        # fire IIS is required.
+        if self.doControlIIS:
+            self.iisControl.goSignal = True
 
     def clearExposure(self, cmd):
         """ Clear all running CcdExposure. """
@@ -155,7 +174,7 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, exptype, exptime, cams, doTest=False, window=False):
+    def __init__(self, actor, exptype, exptime, cams, doIIS=False, doTest=False, window=False):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
 
@@ -165,6 +184,8 @@ class Exposure(object):
         self.exptype = exptype
         self.exptime = exptime
 
+        # IIS flag.
+        self.doIIS = doIIS
         # Define how ccds are wiped and read.
         self.wipeFlavour, self.readFlavour = self.defineCCDControl(window)
 
@@ -188,8 +209,16 @@ class Exposure(object):
         return [camExp for camExp in self.camExp if camExp.cleared]
 
     @property
+    def iisThreads(self):
+        return list(filter(None, [smThread.iisControl for smThread in self.smThreads]))
+
+    @property
+    def lampsThreads(self):
+        return self.iisThreads
+
+    @property
     def threads(self):
-        return self.smThreads
+        return self.smThreads + self.lampsThreads
 
     def defineCCDControl(self, windows):
         """ Declare kind of ccd wipe and ccd reads.  """
@@ -233,11 +262,16 @@ class Exposure(object):
     def finish(self, cmd):
         """ Finish current exposure. """
         self.doFinish = True
+
         for thread in self.threads:
             thread.finish(cmd)
 
     def start(self, cmd, visit):
         """ Start all spectrograph module exposures. """
+        # start lamp thread if any.
+        for thread in self.lampsThreads:
+            thread.start(cmd)
+
         for thread in self.smThreads:
             thread.expose(cmd, visit)
 
@@ -246,7 +280,7 @@ class Exposure(object):
         for thread in self.threads:
             thread.exit()
 
-        self.threads.clear()
+        self.smThreads.clear()
 
     def store(self, cmd, visit):
         """Store Exposure in sps_visit table in opdb database. """
@@ -267,7 +301,11 @@ class DarkExposure(Exposure):
 
     @property
     def camExp(self):
-        return self.threads
+        return self.smThreads
+
+    @property
+    def lampsThreads(self):
+        return []
 
     def instantiate(self, cams):
         """ Create underlying CcdExposure threads object. """

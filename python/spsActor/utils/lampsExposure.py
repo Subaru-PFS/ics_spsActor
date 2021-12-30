@@ -24,11 +24,19 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
     def shuttersOpenCB(self):
         """ Shutters state callback, send go signal whenever open. """
+        # IIS might be required as well.
+        exposure.SpecModuleExposure.shuttersOpenCB(self)
+        # send go signal.
         self.exp.sendGoLampsSignal()
 
 
 class Exposure(exposure.Exposure):
-    """ Lamp controlled exposure time """
+    """ Lamp controlled exposure time  """
+    # Start lamp thread, ready signal will be raised later.
+    #
+    # Normal exposure, except that shutter thread(s) is/are blocked until ready signal.
+    # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
+
     shutterOverHead = 10
     SpecModuleExposureClass = SpecModuleExposure
     LampControlClass = lampsControl.LampsControl
@@ -39,21 +47,16 @@ class Exposure(exposure.Exposure):
         self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
 
     @property
-    def threads(self):
-        return self.smThreads + [self.lampsThread]
-
-    def start(self, cmd, visit):
-        """ Full exposure routine. """
-        # Start lamp thread, ready signal will be raised later.
-        self.lampsThread.start(cmd)
-        # Normal exposure, except that shutter thread(s) is/are blocked until ready signal.
-        # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
-        exposure.Exposure.start(self, cmd, visit=visit)
+    def lampsThreads(self):
+        return [self.lampsThread] + self.iisThreads
 
     def waitForCompletion(self, cmd, visit):
         """ Wait for exposure completion.  """
         fileIds = exposure.Exposure.waitForCompletion(self, cmd, visit=visit)
+
+        # pfilamps expect proper end.
         self.lampsThread.declareDone(cmd)
+
         return fileIds
 
     def waitForReadySignal(self):
