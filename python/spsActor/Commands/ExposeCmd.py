@@ -25,8 +25,8 @@ class ExposeCmd(object):
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doTest] '
-                       f'[<window>]', self.doExposure),
+            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doLamps] '
+                       f'[@doIIS] [@doTest] [<window>]', self.doExposure),
             ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest] [<window>]', self.doExposure),
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
@@ -62,14 +62,15 @@ class ExposeCmd(object):
         cams = self.actor.spsConfig.identify(cams=cams)
 
         doLamps = 'doLamps' in cmdKeys
-        doTest = 'doTest' in cmdKeys
         doLampsTiming = 'doShutterTiming' not in cmdKeys
+        doIIS = 'doIIS' in cmdKeys
+        doTest = 'doTest' in cmdKeys
 
         window = cmdKeys['window'].values if 'window' in cmdKeys else False
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
-                     doTest=doTest, window=window)
+                     doIIS=doIIS, doTest=doTest, window=window)
 
     @singleShot
     def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):

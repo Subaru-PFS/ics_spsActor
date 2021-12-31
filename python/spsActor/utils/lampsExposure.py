@@ -1,123 +1,6 @@
-import time
-
-import ics.utils.cmd as cmdUtils
 import spsActor.utils.exception as exception
-from actorcore.QThread import QThread
-from ics.utils.threading import threaded
-from spsActor.utils import exposure
+from spsActor.utils import exposure, lampsControl
 from spsActor.utils.lib import wait
-
-
-class LampsControl(QThread):
-    """ Placeholder to handle lamp cmd threading. """
-
-    def __init__(self, exp, lampsActor):
-        self.exp = exp
-        self.lampsActor = lampsActor
-        self.cmdVar = None
-        self.goSignal = False
-        self.aborted = None
-        QThread.__init__(self, exp.actor, 'lampsControl')
-        QThread.start(self)
-
-    @property
-    def isReady(self):
-        return self.cmdVar is not None
-
-    def _waitForReadySignal(self, cmd):
-        """ Wait for ready signal from lampActor(pfilamps, dcb..).  """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='waitForReadySignal', timeLim=180)
-
-        if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
-
-        return cmdVar
-
-    def _go(self, cmd):
-        """ Send go command to lampActor. """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go', timeLim=self.exp.exptime + 60)
-
-        if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
-
-        return cmdVar
-
-    @threaded
-    def start(self, cmd):
-        """ Full lamp control routine.  """
-        try:
-            self.cmdVar = self._waitForReadySignal(cmd)
-            # Wait for the go signal, namely when all shutters are opened.
-            self.waitForGoSignal()
-            # Ask lamp controller to pulse lamps with the configured timing.
-            self._go(cmd)
-            # Lamp(s) have been pulsed, exposure can now finish immediately.
-            self.exp.finish(cmd)
-
-        except Exception as e:
-            self.abort(cmd)
-            self.exp.abort(cmd, reason=str(e))
-
-    def waitForGoSignal(self):
-        """ Wait for go signal from the shutters.  """
-        while not self.goSignal:
-            if self.exp.doFinish:
-                raise exception.EarlyFinish
-
-            if self.exp.doAbort:
-                raise exception.ExposureAborted
-
-            wait()
-
-    def abort(self, cmd):
-        """ Send stop command. """
-        if self.aborted is None:
-            self.aborted = False
-            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
-            self.aborted = True
-
-    def declareDone(self, cmd):
-        """ Declare exposure is over.  """
-        self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
-
-    def finish(self, cmd):
-        """ Just a prototype. """
-        pass
-
-    def handleTimeout(self):
-        """ Just a prototype. """
-        pass
-
-
-class ShutterControlled(LampsControl):
-    """ Placeholder to handle lamp cmd threading, in that class exposure time is controlled by shutters. """
-    waitBeforeOpening = 2
-
-    @threaded
-    def start(self, cmd):
-        """ Full lamp control routine.  """
-        try:
-            self._waitForReadySignal(cmd)
-            # Still wait for a go signal from the last shutter thread, namely when detectors are all ready.
-            self.waitForGoSignal()
-            # When _go() returns, here without blocking, it declares self.isReady=True, thus the shutters can be opened.
-            self.cmdVar = self._go(cmd)
-
-        except Exception as e:
-            self.abort(cmd)
-            self.exp.abort(cmd, reason=str(e))
-
-    def _go(self, cmd):
-        """ Send go command, no blocking.  """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait', timeLim=10)
-
-        if cmdVar.didFail:
-            raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
-
-        # Wait for some additional time before opening shutters to be fully safe.
-        time.sleep(ShutterControlled.waitBeforeOpening)
-
-        return cmdVar
 
 
 class SpecModuleExposure(exposure.SpecModuleExposure):
@@ -125,9 +8,6 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
     def __init__(self, *args, **kwargs):
         exposure.SpecModuleExposure.__init__(self, *args, **kwargs)
-        self.shuttersKeyVar = self.exp.actor.models[self.enu].keyVarDict['shutters']
-        self.shuttersKeyVar.addCallback(self.shuttersState)
-        self.shuttersOpen = None
 
     def lightSource(self):
         return self.exp.actor.spsConfig.specModules[self.specName].lightSource
@@ -140,28 +20,28 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         shutterTime = self.exp.exptime + self.exp.shutterOverHead
         # Send proceed with regular shutter integration, the callback will asynchronously give the go to the lamps.
         shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=shutterTime)
-        return self.exp.exptime, dateobs
+        # shutterTime should be always > required lamp exptime unless exposure is interrupted earlier.
+        exptime = min(self.exp.exptime, shutterTime)
+        return exptime, dateobs
 
-    def shuttersState(self, keyVar):
+    def shuttersOpenCB(self):
         """ Shutters state callback, send go signal whenever open. """
-        state = keyVar.getValue(doRaise=False)
-        self.shuttersOpen = 'open' in state
-
-        if self.shuttersOpen:
-            self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
-            self.exp.sendGoLampsSignal()
-
-    def exit(self):
-        """ Free up all resources """
-        self.shuttersKeyVar.removeCallback(self.shuttersState)
-        exposure.SpecModuleExposure.exit(self)
+        # IIS might be required as well.
+        exposure.SpecModuleExposure.shuttersOpenCB(self)
+        # send go signal.
+        self.exp.sendGoLampsSignal()
 
 
 class Exposure(exposure.Exposure):
-    """ Lamp controlled exposure time """
+    """ Lamp controlled exposure time  """
+    # Start lamp thread, ready signal will be raised later.
+    #
+    # Normal exposure, except that shutter thread(s) is/are blocked until ready signal.
+    # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
+
     shutterOverHead = 10
     SpecModuleExposureClass = SpecModuleExposure
-    LampControlClass = LampsControl
+    LampControlClass = lampsControl.LampsControl
 
     def __init__(self, *args, **kwargs):
         exposure.Exposure.__init__(self, *args, **kwargs)
@@ -169,21 +49,16 @@ class Exposure(exposure.Exposure):
         self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
 
     @property
-    def threads(self):
-        return self.smThreads + [self.lampsThread]
-
-    def start(self, cmd, visit):
-        """ Full exposure routine. """
-        # Start lamp thread, ready signal will be raised later.
-        self.lampsThread.start(cmd)
-        # Normal exposure, except that shutter thread(s) is/are blocked until ready signal.
-        # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
-        exposure.Exposure.start(self, cmd, visit=visit)
+    def lampsThreads(self):
+        return [self.lampsThread] + self.iisThreads
 
     def waitForCompletion(self, cmd, visit):
         """ Wait for exposure completion.  """
         fileIds = exposure.Exposure.waitForCompletion(self, cmd, visit=visit)
+
+        # pfilamps expect proper end.
         self.lampsThread.declareDone(cmd)
+
         return fileIds
 
     def waitForReadySignal(self):
@@ -208,7 +83,7 @@ class Exposure(exposure.Exposure):
 class ShutterExposure(Exposure):
     """ Placeholder to handle spectograph module cmd threading. """
     shutterOverHead = 0
-    LampControlClass = ShutterControlled
+    LampControlClass = lampsControl.ShutterControlled
 
     def waitForReadySignal(self):
         """ is called by the shutters, that gives the signal to open the shutters."""
