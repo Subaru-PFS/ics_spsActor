@@ -20,7 +20,9 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         shutterTime = self.exp.exptime + self.exp.shutterOverHead
         # Send proceed with regular shutter integration, the callback will asynchronously give the go to the lamps.
         shutterTime, dateobs = exposure.SpecModuleExposure.integrate(self, cmd, shutterTime=shutterTime)
-        return self.exp.exptime, dateobs
+        # shutterTime should be always > required lamp exptime unless exposure is interrupted earlier.
+        exptime = min(self.exp.exptime, shutterTime)
+        return exptime, dateobs
 
     def shuttersOpenCB(self):
         """ Shutters state callback, send go signal whenever open. """
