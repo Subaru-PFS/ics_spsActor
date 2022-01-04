@@ -97,8 +97,8 @@ class IISControl(LampsControl):
     goCmd = 'iis go'
     abortCmd = 'iis abort'
 
-    def __init__(self, exp, enuActor):
-        LampsControl.__init__(self, exp, enuActor, threadName=f'iisControl_{enuActor}')
+    def __init__(self, exp, enuName):
+        LampsControl.__init__(self, exp, enuName, threadName=f'iisControl_{enuName}')
 
     @threaded
     def start(self, cmd):

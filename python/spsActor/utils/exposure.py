@@ -15,29 +15,35 @@ from spsActor.utils.lib import wait, fromisoformat
 class SpecModuleExposure(QThread):
     """ Placeholder to handle spectograph module cmd threading. """
 
-    def __init__(self, exp, smId, arms):
+    def __init__(self, exp, specNum, arms):
         self.exp = exp
-        self.smId = smId
+        # have specModule config handy.
+        self.specConfig = exp.actor.spsConfig.specModules[f'sm{specNum}']
+
         self.arms = arms
-        self.specName = f'sm{smId}'
-        self.enu = f'enu_{self.specName}'
+        self.enuName = f'enu_{self.specName}'
+
         QThread.__init__(self, exp.actor, self.specName)
 
         # create underlying ccd exposure objects.
-        self.camExp = [CcdExposure(exp, f'{arm}{smId}') for arm in arms]
+        self.camExp = [CcdExposure(exp, f'{arm}{specNum}') for arm in arms]
 
         # add callback for shutters state, useful to fire process asynchronously.
-        self.shuttersKeyVar = self.exp.actor.models[self.enu].keyVarDict['shutters']
+        self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
         self.shuttersKeyVar.addCallback(self.shuttersState)
         self.shuttersOpen = None
 
         # instantiate IIS control if required.
         if self.doControlIIS:
-            self.iisControl = lampsControl.IISControl(self.exp, self.enu)
+            self.iisControl = lampsControl.IISControl(self.exp, self.enuName)
         else:
             self.iisControl = None
 
         self.start()
+
+    @property
+    def specName(self):
+        return self.specConfig.specName
 
     @property
     def doControlIIS(self):
@@ -59,9 +65,11 @@ class SpecModuleExposure(QThread):
         """ current camExp states  """
         return [camExp.state == state for camExp in self.runExp]
 
-    def getShutters(self):
+    def shutterMask(self):
         """ Build argument to enu shutters expose cmd. """
-        return '' if 'b' in self.arms else 'red'
+        shutters = list(set(sum([self.specConfig.shutterSet(arm, lightBeam=True) for arm in self.arms], [])))
+        bitMask = 0 if not shutters else sum([shutter.bitMask for shutter in shutters])
+        return f'0x{bitMask:x}'
 
     def wipe(self, cmd):
         """ Wipe running CcdExposure and wait for integrating state.
@@ -86,9 +94,9 @@ class SpecModuleExposure(QThread):
         # exposure time can have some overhead.
         shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
-        shutters = self.getShutters()
-        cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enu,
-                                          cmdStr=f'shutters expose {shutters} exptime={shutterTime}',
+        shutterMask = self.shutterMask()
+        cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
+                                          cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask}',
                                           timeLim=shutterTime + 2)
         if self.exp.doAbort:
             raise exception.ExposureAborted
@@ -151,12 +159,12 @@ class SpecModuleExposure(QThread):
     def abort(self, cmd):
         """ Command shutters to abort exposure. """
         if any(self.currently(state='integrating')):
-            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure finish')
+            self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
 
     def finish(self, cmd):
         """ Command shutters to finish exposure. """
         if any(self.currently(state='integrating')):
-            self.exp.actor.safeCall(cmd, actor=self.enu, cmdStr='exposure finish')
+            self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
 
     def exit(self):
         """ Free up all resources. """
