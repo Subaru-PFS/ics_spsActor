@@ -1,10 +1,10 @@
 import time
 
 import ics.utils.cmd as cmdUtils
+import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.threading import threaded
-from spsActor.utils.lib import wait
 
 
 class LampsControl(QThread):
@@ -69,7 +69,7 @@ class LampsControl(QThread):
             if self.exp.doAbort:
                 raise exception.ExposureAborted
 
-            wait()
+            pfsTime.sleep.millisec()
 
     def abort(self, cmd):
         """ Send stop command. """
