@@ -1,7 +1,5 @@
-from datetime import datetime as dt
-from datetime import timedelta
-
 import ics.utils.cmd as cmdUtils
+import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
@@ -9,7 +7,6 @@ from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
 from spsActor.utils import lampsControl
 from spsActor.utils.ids import SpsIds as idsUtils
-from spsActor.utils.lib import wait, fromisoformat
 
 
 class SpecModuleExposure(QThread):
@@ -78,10 +75,10 @@ class SpecModuleExposure(QThread):
             camExp.wipe(cmd)
 
         while not any(self.currently(state='wiping')):
-            wait()
+            pfsTime.sleep.millisec()
 
         while not all(self.currently(state='integrating')):
-            wait()
+            pfsTime.sleep.millisec()
 
         if self.exp.doFinish:
             raise exception.EarlyFinish
@@ -107,7 +104,8 @@ class SpecModuleExposure(QThread):
         keys = cmdUtils.cmdVarToKeys(cmdVar)
 
         exptime = float(keys['exptime'].values[0])
-        dateobs = fromisoformat(keys['dateobs'].values[0])
+        dateobs = pfsTime.Time.fromisoformat(keys['dateobs'].values[0]).isoformat()
+        # dateobs = keys['dateobs'].values[0]
 
         return exptime, dateobs
 
@@ -117,7 +115,7 @@ class SpecModuleExposure(QThread):
             camExp.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
         while not all(self.currently(state='idle')):
-            wait()
+            pfsTime.sleep.millisec()
 
     @threaded
     def expose(self, cmd, visit):
@@ -253,7 +251,7 @@ class Exposure(object):
         self.start(cmd, visit)
 
         while not self.isFinished:
-            wait()
+            pfsTime.sleep.millisec()
 
         if self.storable:
             frames = self.store(cmd, visit)
@@ -355,20 +353,20 @@ class CcdExposure(QThread):
         if cmdVar.didFail:
             raise exception.WipeFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
 
-        return dt.utcnow()
+        return pfsTime.timestamp()
 
     def _read(self, cmd, visit, dateobs, exptime=None):
         """ Send ccd read command and handle reply. """
-        self.time_exp_start = dateobs
-        self.time_exp_end = dt.utcnow()
+        self.dateobs = dateobs
+        self.time_exp_end = pfsTime.timestamp()
 
-        darktime = round((self.time_exp_end - self.wiped).total_seconds(), 3)
+        darktime = round(self.time_exp_end - self.wipedAt, 3)
         exptime = darktime if exptime is None else exptime
         exptime = round(exptime, 3)
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
                                                                   f'visit={visit} exptime={exptime} '
-                                                                  f'darktime={darktime} obstime={dateobs.isoformat()} '
+                                                                  f'darktime={darktime} obstime={dateobs} '
                                                                   f'{self.exp.readFlavour}')
 
         if cmdVar.didFail:
@@ -384,17 +382,20 @@ class CcdExposure(QThread):
         if self.exp.doAbort:
             raise exception.ExposureAborted
 
-        tlim = self.wiped + timedelta(seconds=self.exp.exptime)
+        integrationEnd = self.wipedAt + self.exp.exptime
 
-        while dt.utcnow() < tlim:
+        while pfsTime.timestamp() < integrationEnd:
             if self.exp.doAbort:
                 raise exception.ExposureAborted
             if self.exp.doFinish:
                 break
 
-            wait()
+            pfsTime.sleep.millisec()
 
-        return self.wiped
+        # convert timestamp to localized datetime.
+        dateobs = pfsTime.convert.datetime_from_timestamp(self.wipedAt)
+        # dateobs is actually a string to be fast and consistent with expose.
+        return pfsTime.convert.datetime_to_isoformat(dateobs)
 
     def clearExposure(self, cmd):
         """ Call ccdActor clearExposure command """
@@ -407,7 +408,7 @@ class CcdExposure(QThread):
     def expose(self, cmd, visit):
         """ Full exposure routine for calib object. """
         try:
-            self.wiped = self._wipe(cmd)
+            self.wipedAt = self._wipe(cmd)
             dateobs = self.integrate()
             self.exptime = self._read(cmd, visit, dateobs)
 
@@ -419,7 +420,7 @@ class CcdExposure(QThread):
     def wipe(self, cmd):
         """ Wipe in thread. """
         try:
-            self.wiped = self._wipe(cmd)
+            self.wipedAt = self._wipe(cmd)
         except exception.WipeFailed as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
@@ -443,10 +444,15 @@ class CcdExposure(QThread):
         camStr, dateDir, visit, specNum, armNum = keys['spsFileIds'].values
         cam = idsUtils.camFromNums(specNum=specNum, armNum=armNum)
 
+        # convert time_exp_start to datetime object.
+        time_exp_start = pfsTime.Time.fromisoformat(self.dateobs).to_datetime()
+        # convert timestamp to datetime object.
+        time_exp_end = pfsTime.Time.fromtimestamp(self.time_exp_end).to_datetime()
+
         try:
             opDB.insert('sps_exposure',
                         pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
-                        time_exp_start=self.time_exp_start, time_exp_end=self.time_exp_end,
+                        time_exp_start=time_exp_start, time_exp_end=time_exp_end,
                         beam_config_date=float(beamConfigDate))
             return cam.camName
         except Exception as e:

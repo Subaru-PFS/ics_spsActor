@@ -1,6 +1,6 @@
+import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from spsActor.utils import exposure, lampsControl
-from spsActor.utils.lib import wait
 
 
 class SpecModuleExposure(exposure.SpecModuleExposure):
@@ -70,7 +70,7 @@ class Exposure(exposure.Exposure):
             if self.doAbort:
                 raise exception.ExposureAborted
 
-            wait()
+            pfsTime.sleep.millisec()
 
         self.actor.bcast.debug(f'text="{self.lampsThread.lampsActor} is ready !!!"')
 

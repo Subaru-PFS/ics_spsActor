@@ -1,8 +1,8 @@
 import ics.utils.cmd as cmdUtils
+import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.threading import threaded
-from spsActor.utils.lib import wait
 
 
 class SpsCmd(object):
@@ -44,7 +44,7 @@ class SpsCmd(object):
     def sync(self):
         """ Wait for command thread to be finished. """
         while not self.finished:
-            wait()
+            pfsTime.sleep.millisec()
 
         return self.didFail
 
