@@ -11,6 +11,7 @@ from spsActor.utils.ids import SpsIds as idsUtils
 
 class SpecModuleExposure(QThread):
     """ Placeholder to handle spectograph module cmd threading. """
+    EnuExposeTimeMargin = 5
 
     def __init__(self, exp, specNum, arms):
         self.exp = exp
@@ -94,7 +95,7 @@ class SpecModuleExposure(QThread):
         shutterMask = self.shutterMask()
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
                                           cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask}',
-                                          timeLim=shutterTime + 2)
+                                          timeLim=shutterTime + SpecModuleExposure.EnuExposeTimeMargin)
         if self.exp.doAbort:
             raise exception.ExposureAborted
 
@@ -319,6 +320,10 @@ class DarkExposure(Exposure):
 
 
 class CcdExposure(QThread):
+    # timeout setting.
+    wipeTimeLim = 30
+    readTimeLim = 90
+    clearTimeLim = 10
     """ Placeholder to handle ccdActor cmd threading """
 
     def __init__(self, exp, cam):
@@ -349,7 +354,8 @@ class CcdExposure(QThread):
 
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.exp.wipeFlavour}', timeLim=30)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.exp.wipeFlavour}',
+                                      timeLim=CcdExposure.wipeTimeLim)
         if cmdVar.didFail:
             raise exception.WipeFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
 
@@ -367,7 +373,8 @@ class CcdExposure(QThread):
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
                                                                   f'visit={visit} exptime={exptime} '
                                                                   f'darktime={darktime} obstime={dateobs} '
-                                                                  f'{self.exp.readFlavour}')
+                                                                  f'{self.exp.readFlavour}',
+                                      timeLim=CcdExposure.readTimeLim)
 
         if cmdVar.didFail:
             raise exception.ReadFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
@@ -401,7 +408,7 @@ class CcdExposure(QThread):
         """ Call ccdActor clearExposure command """
         if self.cleared is None:
             self.cleared = False
-            self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure', timeLim=2)
+            self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure', timeLim=CcdExposure.clearTimeLim)
             self.cleared = True
 
     @threaded

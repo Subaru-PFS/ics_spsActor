@@ -11,6 +11,9 @@ class LampsControl(QThread):
     """ Placeholder to handle lamp cmd threading. """
     goCmd = 'go'
     abortCmd = 'stop'
+    waitForReadySignalTimeLim = 300
+    goTimeMargin = 60
+    abortTimeLim = stopTimeLim = goNoWaitTimeLim = 10
 
     def __init__(self, exp, lampsActor, threadName='lampsControl'):
 
@@ -28,7 +31,8 @@ class LampsControl(QThread):
 
     def _waitForReadySignal(self, cmd):
         """ Wait for ready signal from lampActor(pfilamps, dcb..).  """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='waitForReadySignal', timeLim=180)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='waitForReadySignal',
+                                      timeLim=LampsControl.waitForReadySignalTimeLim)
 
         if cmdVar.didFail:
             raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
@@ -37,7 +41,8 @@ class LampsControl(QThread):
 
     def _go(self, cmd):
         """ Send go command to lampActor. """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr=self.goCmd, timeLim=self.exp.exptime + 60)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr=self.goCmd,
+                                      timeLim=self.exp.exptime + LampsControl.goTimeMargin)
 
         if cmdVar.didFail:
             raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
@@ -75,12 +80,12 @@ class LampsControl(QThread):
         """ Send stop command. """
         if self.aborted is None:
             self.aborted = False
-            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=5)
+            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
             self.aborted = True
 
     def declareDone(self, cmd):
         """ Declare exposure is over.  """
-        self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=5)
+        self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=LampsControl.stopTimeLim)
 
     def finish(self, cmd):
         """ Just a prototype. """
@@ -136,7 +141,8 @@ class ShutterControlled(LampsControl):
 
     def _go(self, cmd):
         """ Send go command, no blocking.  """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait', timeLim=10)
+        cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait',
+                                      timeLim=LampsControl.goNoWaitTimeLim)
 
         if cmdVar.didFail:
             raise exception.LampsFailed(self.lampsActor, cmdUtils.interpretFailure(cmdVar))
