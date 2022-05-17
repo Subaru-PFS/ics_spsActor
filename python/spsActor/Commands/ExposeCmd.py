@@ -21,13 +21,20 @@ class ExposeCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a le   le argument, the parsed and typed command.
         #
-        exptypes = "|".join(ExposeCmd.expTypes[1:])
+
+        expArgs = '[<visit>] [<cam>] [<cams>] [@doTest]'
+        lampsArgs = '[@doLamps] [@doShutterTiming]'
+        windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'@({exptypes}) <exptime> [<visit>] [<cam>] [<cams>] [@doLamps] [@doShutterTiming] [@doLamps] '
-                       f'[@doIIS] [@doTest] [<window>]', self.doExposure),
-            ('expose', 'bias [<visit>] [<cam>] [<cams>] [doTest] [<window>]', self.doExposure),
+            ('expose', f'object <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'flat <exptime> {expArgs} {lampsArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'arc <exptime> {expArgs} {lampsArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'domeflat <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'dark <exptime> {expArgs} {windowingArgs}', self.doExposure),
+            ('expose', f'bias {expArgs} {windowingArgs}', self.doExposure),
+
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
             ('exposure', 'status', self.status)
@@ -43,13 +50,18 @@ class ExposeCmd(object):
                                         keys.Key("visit", types.Int(),
                                                  help='PFS visit id'),
                                         keys.Key("window", types.Int() * (1, 2),
-                                                 help='first row, total number of rows to read'),
+                                                 help='first row, total number of rows to read, br arms'),
+                                        keys.Key("blueWindow", types.Int() * (1, 2),
+                                                 help='first row, total number of rows to read on blue arm'),
+                                        keys.Key("redWindow", types.Int() * (1, 2),
+                                                 help='first row, total number of rows to read on red arm'),
                                         )
 
     def doExposure(self, cmd):
         cmdKeys = cmd.cmd.keywords
 
         exptype = None
+        blueWindow = redWindow = False
 
         for valid in ExposeCmd.expTypes:
             exptype = valid if valid in cmdKeys else exptype
@@ -66,11 +78,15 @@ class ExposeCmd(object):
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
 
-        window = cmdKeys['window'].values if 'window' in cmdKeys else False
+        if 'window' in cmdKeys:
+            blueWindow = redWindow = cmdKeys['window'].values
+
+        blueWindow = cmdKeys['blueWindow'].values if 'blueWindow' in cmdKeys else blueWindow
+        redWindow = cmdKeys['redWindow'].values if 'redWindow' in cmdKeys else redWindow
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
-                     doIIS=doIIS, doTest=doTest, window=window)
+                     doIIS=doIIS, doTest=doTest, blueWindow=blueWindow, redWindow=redWindow)
 
     @singleShot
     def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
