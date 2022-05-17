@@ -23,14 +23,14 @@ class SpsIds(object):
         return mask
 
     @staticmethod
-    def camToArmDict(cams):
-        """ Convert camera list to arm dictionary. """
-        armDict = dict()
+    def splitCamPerSpec(cams):
+        """ Convert camera list to cam dictionary. """
+        camDict = dict()
 
         for cam in cams:
             try:
-                armDict[cam.specNum].append(cam.arm)
+                camDict[cam.specNum].append(cam)
             except KeyError:
-                armDict[cam.specNum] = [cam.arm]
+                camDict[cam.specNum] = [cam]
 
-        return armDict
+        return camDict

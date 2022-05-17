@@ -13,18 +13,18 @@ class SpecModuleExposure(QThread):
     """ Placeholder to handle spectograph module cmd threading. """
     EnuExposeTimeMargin = 5
 
-    def __init__(self, exp, specNum, arms):
+    def __init__(self, exp, specNum, cams):
         self.exp = exp
         # have specModule config handy.
         self.specConfig = exp.actor.spsConfig.specModules[f'sm{specNum}']
 
-        self.arms = arms
+        self.cams = cams
         self.enuName = f'enu_{self.specName}'
 
         QThread.__init__(self, exp.actor, self.specName)
 
         # create underlying ccd exposure objects.
-        self.camExp = [CcdExposure(exp, f'{arm}{specNum}') for arm in arms]
+        self.camExp = [CcdExposure(exp, cam) for cam in cams]
 
         # add callback for shutters state, useful to fire process asynchronously.
         self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
@@ -42,6 +42,10 @@ class SpecModuleExposure(QThread):
     @property
     def specName(self):
         return self.specConfig.specName
+
+    @property
+    def arms(self):
+        return [cam.arm for cam in self.cams]
 
     @property
     def doControlIIS(self):
@@ -238,7 +242,7 @@ class Exposure(object):
 
     def instantiate(self, cams):
         """ Create underlying specModuleExposure threads.  """
-        return [self.SpecModuleExposureClass(self, smId, arms) for smId, arms in idsUtils.camToArmDict(cams).items()]
+        return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in idsUtils.splitCamPerSpec(cams).items()]
 
     def waitForCompletion(self, cmd, visit):
         """ Create underlying specModuleExposure threads.  """
@@ -324,8 +328,16 @@ class CcdExposure(QThread):
     """ Placeholder to handle ccdActor cmd threading """
 
     def __init__(self, exp, cam):
+        """Parameters
+        ----------
+        exp : `spsActor.utils.exposure.Exposure`
+           exposure object.
+        cam : `
+           camera object.
+        """
         self.exp = exp
         self.exptype = exp.exptype
+        self.cam = cam
         self.ccd = f'ccd_{cam}'
 
         self.states = []
