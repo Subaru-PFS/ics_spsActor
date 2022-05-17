@@ -75,10 +75,7 @@ class SpecModuleExposure(QThread):
         for camExp in self.runExp:
             camExp.wipe(cmd)
 
-        while not any(self.currently(state='wiping')):
-            pfsTime.sleep.millisec()
-
-        while not all(self.currently(state='integrating')):
+        while not all([ccd.wiped for ccd in self.runExp]):
             pfsTime.sleep.millisec()
 
         if self.exp.doFinish:
@@ -331,11 +328,16 @@ class CcdExposure(QThread):
         self.exptype = exp.exptype
         self.ccd = f'ccd_{cam}'
 
+        self.states = []
         self.readVar = None
         self.cleared = None
 
         QThread.__init__(self, self.exp.actor, self.ccd)
         QThread.start(self)
+
+        # add callback for shutters state, useful to fire process asynchronously.
+        self.stateKeyVar = exp.actor.models[self.ccd].keyVarDict['exposureState']
+        self.stateKeyVar.addCallback(self.exposureState)
 
     @property
     def state(self):
@@ -351,6 +353,17 @@ class CcdExposure(QThread):
     @property
     def isFinished(self):
         return self.cleared or self.storable
+
+    @property
+    def wiped(self):
+        return 'wiping' in self.states and 'integrating' in self.states
+
+    def exposureState(self, keyVar):
+        """Exposure State callback."""
+        state = keyVar.getValue(doRaise=False)
+        # track ccd state.
+        self.actor.bcast.debug(f'text="{self.ccd} {state}"')
+        self.states.append(state)
 
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
@@ -476,3 +489,8 @@ class CcdExposure(QThread):
     def handleTimeout(self):
         """ Just a prototype. """
         pass
+
+    def exit(self):
+        """Overriding QThread.exit(self)"""
+        self.stateKeyVar.removeCallback(self.exposureState)
+        QThread.exit(self)
