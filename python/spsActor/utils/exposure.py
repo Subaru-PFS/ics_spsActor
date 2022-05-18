@@ -182,7 +182,7 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, exptype, exptime, cams, doIIS=False, doTest=False, window=False):
+    def __init__(self, actor, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False, redWindow=False):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
 
@@ -192,10 +192,14 @@ class Exposure(object):
         self.exptype = exptype
         self.exptime = exptime
 
+        # Define how ccds are wiped and read.
+        self.wipeFlavour = dict(b='', r='')
+        self.readFlavour = dict(b='', r='')
+
         # IIS flag.
         self.doIIS = doIIS
-        # Define how ccds are wiped and read.
-        self.wipeFlavour, self.readFlavour = self.defineCCDControl(window)
+        # update ccd control if windowing is activated
+        self.defineCCDControl(blueWindow, redWindow)
 
         self.failures = exception.Failures()
         self.smThreads = self.instantiate(cams)
@@ -228,17 +232,15 @@ class Exposure(object):
     def threads(self):
         return self.smThreads + self.lampsThreads
 
-    def defineCCDControl(self, windows):
-        """ Declare kind of ccd wipe and ccd reads.  """
-        if windows:
-            row0, nrows = windows
-            wipeFlavour = 'nrows=0'
-            readFlavour = f'row0={row0} nrows={nrows}'
-        else:
-            wipeFlavour = ''
-            readFlavour = ''
+    def defineCCDControl(self, blueWindow, redWindow):
+        """Update CCD wipe and read flavours based on windowing."""
+        for arm, window in zip('br', [blueWindow, redWindow]):
+            if not window:
+                continue
 
-        return wipeFlavour, readFlavour
+            row0, nrows = window
+            self.wipeFlavour[arm] = 'nrows=0'
+            self.readFlavour[arm] = f'row0={row0} nrows={nrows}'
 
     def instantiate(self, cams):
         """ Create underlying specModuleExposure threads.  """
@@ -336,7 +338,6 @@ class CcdExposure(QThread):
            camera object.
         """
         self.exp = exp
-        self.exptype = exp.exptype
         self.cam = cam
         self.ccd = f'ccd_{cam}'
 
@@ -350,6 +351,18 @@ class CcdExposure(QThread):
         # add callback for shutters state, useful to fire process asynchronously.
         self.stateKeyVar = exp.actor.models[self.ccd].keyVarDict['exposureState']
         self.stateKeyVar.addCallback(self.exposureState)
+
+    @property
+    def exptype(self):
+        return self.exp.exptype
+
+    @property
+    def wipeFlavour(self):
+        return self.exp.wipeFlavour[self.cam.arm]
+
+    @property
+    def readFlavour(self):
+        return self.exp.readFlavour[self.cam.arm]
 
     @property
     def state(self):
@@ -379,7 +392,7 @@ class CcdExposure(QThread):
 
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
-        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.exp.wipeFlavour}',
+        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.wipeFlavour}',
                                       timeLim=CcdExposure.wipeTimeLim)
         if cmdVar.didFail:
             raise exception.WipeFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
@@ -398,7 +411,7 @@ class CcdExposure(QThread):
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
                                                                   f'visit={visit} exptime={exptime} '
                                                                   f'darktime={darktime} obstime={dateobs} '
-                                                                  f'{self.exp.readFlavour}',
+                                                                  f'{self.readFlavour}',
                                       timeLim=CcdExposure.readTimeLim)
 
         if cmdVar.didFail:
