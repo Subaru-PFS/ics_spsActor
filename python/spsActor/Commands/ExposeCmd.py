@@ -4,10 +4,12 @@ from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
+import spsActor.Commands.cmdList as sync
 from ics.utils.threading import singleShot
 from spsActor.utils import exposure, lampsExposure
 
 reload(exposure)
+reload(sync)
 
 
 class ExposeCmd(object):
@@ -34,6 +36,8 @@ class ExposeCmd(object):
             ('expose', f'domeflat <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
             ('expose', f'dark <exptime> {expArgs} {windowingArgs}', self.doExposure),
             ('expose', f'bias {expArgs} {windowingArgs}', self.doExposure),
+
+            ('erase', f'[<cam>] [<cams>]', self.doErase),
 
             ('exposure', 'abort <visit>', self.abort),
             ('exposure', 'finish <visit>', self.finish),
@@ -124,6 +128,17 @@ class ExposeCmd(object):
         finally:
             exp.exit()
             self.exp.pop(visit, None)
+
+    def doErase(self, cmd):
+        """ Move multiple ccdMotors synchronously. """
+        cmdKeys = cmd.cmd.keywords
+
+        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else None
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
+        cams = self.actor.spsConfig.identify(cams=cams)
+
+        syncCmd = sync.CcdErase(self.actor, cams=cams)
+        syncCmd.process(cmd)
 
     def abort(self, cmd):
         """Abort current exposure."""
