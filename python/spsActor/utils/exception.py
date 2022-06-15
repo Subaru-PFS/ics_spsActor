@@ -8,6 +8,8 @@ def factory(className, *args, **kwargs):
         return BiaFailed(*args, **kwargs)
     elif className == "CcdMotorsMoveCmd":
         return CcdMotorsFailed(*args, **kwargs)
+    elif className == "CcdEraseCmd":
+        return EraseFailed(*args, **kwargs)
 
 
 class SpsException(Exception):
@@ -25,6 +27,10 @@ class WipeFailed(SpsException):
 
 
 class ReadFailed(SpsException):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
+
+class EraseFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
 
@@ -50,6 +56,7 @@ class CcdMotorsFailed(SpsException):
 
 class LampsFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
 
 class ExposureAborted(Exception):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""

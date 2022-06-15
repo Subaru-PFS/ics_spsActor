@@ -38,6 +38,14 @@ class CcdMotorsMove(sync.SpsCmd):
         self.attachThreads([CcdMotorsMoveCmd(self, cam, cmdStr, CcdMotorsMove.timeLim) for cam in cams])
 
 
+class CcdErase(sync.SpsCmd):
+    timeLim = 30
+
+    def __init__(self, spsActor, cams, **kwargs):
+        sync.SpsCmd.__init__(self, spsActor)
+        self.attachThreads([CcdEraseCmd(self, cam, 'erase', CcdErase.timeLim) for cam in cams])
+
+
 class RdaMoveCmd(sync.CmdThread):
     def __init__(self, spsCmd, specNum, cmdStr, timeLim):
         sync.CmdThread.__init__(self, spsCmd,
@@ -60,3 +68,9 @@ class CcdMotorsMoveCmd(sync.CmdThread):
     def __init__(self, spsCmd, cam, cmdStr, timeLim):
         sync.CmdThread.__init__(self, spsCmd,
                                 actor=f'xcu_{cam}', cmdStr=cmdStr, timeLim=timeLim)
+
+
+class CcdEraseCmd(sync.CmdThread):
+    def __init__(self, spsCmd, cam, cmdStr, timeLim):
+        sync.CmdThread.__init__(self, spsCmd,
+                                actor=f'ccd_{cam}', cmdStr=cmdStr, timeLim=timeLim)
