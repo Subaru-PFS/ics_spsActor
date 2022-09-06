@@ -5,9 +5,22 @@ from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
+from spsActor.utils import ccdExposure
+from spsActor.utils import hxExposure
 from spsActor.utils import lampsControl
 from spsActor.utils.ids import SpsIds as idsUtils
-from spsActor.utils import ccdExposure
+
+
+def factory(exp, cam):
+    """Return Exposure object given the cam"""
+
+    if cam.arm in ['b', 'r', 'm']:
+        return ccdExposure.CcdExposure(exp, cam)
+    elif cam.arm in ['n']:
+        return hxExposure.HxExposure(exp, cam)
+    else:
+        raise ValueError(f'unknown arm:{cam.arm} ..')
+
 
 class SpecModuleExposure(QThread):
     """ Placeholder to handle spectograph module cmd threading. """
@@ -23,8 +36,8 @@ class SpecModuleExposure(QThread):
 
         QThread.__init__(self, exp.actor, self.specName)
 
-        # create underlying ccd exposure objects.
-        self.camExp = [ccdExposure.CcdExposure(exp, cam) for cam in cams]
+        # create underlying exposure objects.
+        self.camExp = [factory(exp, cam) for cam in cams]
 
         # add callback for shutters state, useful to fire process asynchronously.
         self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
@@ -182,13 +195,14 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False, redWindow=False):
+    def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False, redWindow=False):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
 
         self.doAbort = False
         self.doFinish = False
         self.actor = actor
+        self.visit = visit
         self.exptype = exptype
         self.exptime = exptime
 
