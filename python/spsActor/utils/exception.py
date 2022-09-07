@@ -33,6 +33,8 @@ class ReadFailed(SpsException):
 class EraseFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
+class HxRampFailed(SpsException):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
 class ShuttersFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
