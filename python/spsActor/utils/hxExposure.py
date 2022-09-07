@@ -32,18 +32,31 @@ class HxExposure(QThread):
         cam : `
            camera object.
         """
+
+        def nRead(exp):
+            """Calculate number of read given exptype, exptime."""
+            if exp.exptype == 'bias':
+                nRead = 0
+            elif exp.exptype == 'dark':
+                nRead = round(exp.exptime / HxExposure.rampTime)
+            else:
+                nRead = exp.exptime // HxExposure.rampTime + 2
+
+            return int(nRead)
+
         self.exp = exp
         self.cam = cam
         self.hx = f'hx_{cam}'
-        self.nRead = int(self.exp.exptime // HxExposure.rampTime + 2)
 
         QThread.__init__(self, self.exp.actor, self.hx)
         QThread.start(self)
 
-        self.state = 'none'
-        self.wiped = False
-        self.cleared = False
+        self.wipedAt = None
         self.readVar = None
+        self.cleared = None
+
+        self.state = 'none'
+        self.nRead = nRead(exp)
 
         # add callback for shutters state, useful to fire process asynchronously.
         self.hxRead = exp.actor.models[self.hx].keyVarDict['hxread']
@@ -54,19 +67,23 @@ class HxExposure(QThread):
 
         # gotcha to pretend this is a ccd.
         self.wipe = self.ramp
-        self.read = self.shutterIsClosed
+        self.read = self.finalize
 
     @property
     def exptype(self):
         return self.exp.exptype
 
     @property
-    def isFinished(self):
-        return self.cleared or self.storable
-
-    @property
     def storable(self):
         return self.readVar is not None
+
+    @property
+    def isFinished(self):
+        return self.cleared or self.storable or self.nRead == 0
+
+    @property
+    def wiped(self):
+        return self.wipedAt is not None
 
     def hxReadCB(self, keyVar):
         """H4 read callback."""
@@ -81,7 +98,7 @@ class HxExposure(QThread):
 
         # pretending this is a ccd.
         if nGroup == 0:
-            self.wiped = True
+            self.wipedAt = pfsTime.timestamp()
             self.state = 'integrating'
 
         elif nGroup == 1 and nRead == self.nRead:
@@ -114,19 +131,29 @@ class HxExposure(QThread):
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
 
-    def shutterIsClosed(self, cmd, visit, dateobs, exptime):
-        """Called from specModule thread, after shutters are closed."""
+    @threaded
+    def expose(self, cmd, visit):
+        """ Full exposure routine for calib object. """
+        # no need to go further.
+        if not self.nRead:
+            return
+
+        try:
+            self._ramp(cmd)
+            self.finalize(cmd, visit,
+                          dateobs=pfsTime.convert.datetime_to_isoformat(
+                              pfsTime.convert.datetime_from_timestamp(self.wipedAt)),
+                          exptime=self.nRead * HxExposure.rampTime)
+
+        except Exception as e:
+            self.clearExposure(cmd)
+            self.exp.abort(cmd, reason=str(e))
+
+    def finalize(self, cmd, visit, dateobs, exptime):
+        """Called to finalize exposure, from specModule thread, after shutters are closed for example."""
         self.dateobs = dateobs
         self.exptime = round(exptime, 3)
         self.time_exp_end = pfsTime.timestamp()
-
-    def abort(self, cmd):
-        """Just a prototype."""
-        pass
-
-    def finish(self, cmd):
-        """Just a prototype."""
-        pass
 
     def store(self):
         """Store in sps_exposure in opDB database."""
@@ -153,6 +180,18 @@ class HxExposure(QThread):
             return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
+
+    def abort(self, cmd):
+        """Just a prototype."""
+        pass
+
+    def finish(self, cmd):
+        """Just a prototype."""
+        pass
+
+    def clearExposure(self, cmd):
+        """Just a prototype."""
+        self.cleared = True
 
     def handleTimeout(self):
         """Just a prototype."""
