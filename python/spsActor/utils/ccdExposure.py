@@ -26,7 +26,7 @@ class CcdExposure(QThread):
         self.cam = cam
         self.ccd = f'ccd_{cam}'
 
-        self.states = []
+        self.wipedAt = None
         self.readVar = None
         self.cleared = None
 
@@ -40,6 +40,18 @@ class CcdExposure(QThread):
     @property
     def exptype(self):
         return self.exp.exptype
+
+    @property
+    def storable(self):
+        return self.readVar is not None
+
+    @property
+    def isFinished(self):
+        return self.cleared or self.storable
+
+    @property
+    def wiped(self):
+        return self.wipedAt is not None
 
     @property
     def wipeFlavour(self):
@@ -56,24 +68,11 @@ class CcdExposure(QThread):
 
         return self.exp.actor.models[self.ccd].keyVarDict['exposureState'].getValue(doRaise=False)
 
-    @property
-    def storable(self):
-        return self.readVar is not None
-
-    @property
-    def isFinished(self):
-        return self.cleared or self.storable
-
-    @property
-    def wiped(self):
-        return 'wiping' in self.states and 'integrating' in self.states
-
     def exposureState(self, keyVar):
         """Exposure State callback."""
         state = keyVar.getValue(doRaise=False)
         # track ccd state.
         self.actor.bcast.debug(f'text="{self.ccd} {state}"')
-        self.states.append(state)
 
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
