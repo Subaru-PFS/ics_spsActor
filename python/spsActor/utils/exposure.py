@@ -13,10 +13,9 @@ from spsActor.utils.ids import SpsIds as idsUtils
 
 def factory(exp, cam):
     """Return Exposure object given the cam"""
-
-    if cam.arm in ['b', 'r', 'm']:
+    if cam.arm in 'brm':
         return ccdExposure.CcdExposure(exp, cam)
-    elif cam.arm in ['n']:
+    elif cam.arm in 'n':
         return hxExposure.HxExposure(exp, cam)
     else:
         raise ValueError(f'unknown arm:{cam.arm} ..')
@@ -195,7 +194,8 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False, redWindow=False):
+    def __init__(self, actor, visit, exptype, exptime, cams,
+                 doIIS=False, doTest=False, blueWindow=False, redWindow=False):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
 
@@ -333,4 +333,4 @@ class DarkExposure(Exposure):
 
     def instantiate(self, cams):
         """ Create underlying CcdExposure threads object. """
-        return [ccdExposure.CcdExposure(self, cam) for cam in cams]
+        return [factory(self, cam) for cam in cams]
