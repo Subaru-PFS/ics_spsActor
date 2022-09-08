@@ -36,11 +36,16 @@ class HxExposure(QThread):
         def nRead(exp):
             """Calculate number of read given exptype, exptime."""
             if exp.exptype == 'bias':
+                # bias does not mean anything for H4, could maybe mean a single read ? not doing it for now.
                 nRead = 0
             elif exp.exptype == 'dark':
-                nRead = round(exp.exptime / HxExposure.rampTime)
+                # signal = ramp[-1] - ramp[0] , since ramp[0] is only use to subtract, you need an extra-one.
+                nRead = round(exp.exptime / HxExposure.rampTime) + 1
             else:
-                nRead = exp.exptime // HxExposure.rampTime + 2
+                # signal = ramp[-1] - ramp[0], you need a clean ramp[0] that will be subtracted, and you need an extra
+                # after the shutter/lamp transition.
+                # In other words you always need to bracket your signal with clean/stable ramps.
+                nRead = exp.exptime // HxExposure.rampTime + 3
 
             return int(nRead)
 
@@ -51,6 +56,7 @@ class HxExposure(QThread):
         QThread.__init__(self, self.exp.actor, self.hx)
         QThread.start(self)
 
+        self.reset = False
         self.wipedAt = None
         self.readVar = None
         self.cleared = None
@@ -66,7 +72,6 @@ class HxExposure(QThread):
         self.filename.addCallback(self.newFileNameCB)
 
         # gotcha to pretend this is a ccd.
-        self.wipe = self.ramp
         self.read = self.finalize
 
     @property
@@ -96,8 +101,11 @@ class HxExposure(QThread):
         # track h4 state.
         self.actor.bcast.debug(f'text="{self.hx} {visit} {nRamp} {nGroup} {nRead}"')
 
-        # pretending this is a ccd.
         if nGroup == 0:
+            self.reset = True
+
+        # pretending this is a ccd.
+        if nGroup == 1 and nRead == 1:
             self.wipedAt = pfsTime.timestamp()
             self.state = 'integrating'
 

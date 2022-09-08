@@ -60,6 +60,12 @@ class SpecModuleExposure(QThread):
         return [cam.arm for cam in self.cams]
 
     @property
+    def hxExposure(self):
+        for camExp in self.camExp:
+            if isinstance(camExp, hxExposure.HxExposure):
+                return camExp
+
+    @property
     def doControlIIS(self):
         return self.exp.doIIS
 
@@ -88,10 +94,18 @@ class SpecModuleExposure(QThread):
     def wipe(self, cmd):
         """ Wipe running CcdExposure and wait for integrating state.
         Note that doFinish==doAbort at the beginning of integration.  """
+        # do a ramp and wait for the reset frame to start wiping ccds
+        if self.hxExposure:
+            self.hxExposure.ramp(cmd)
+            while not self.hxExposure.reset:
+                pfsTime.sleep.millisec()
+
         for camExp in self.runExp:
+            if camExp == self.hxExposure:
+                continue
             camExp.wipe(cmd)
 
-        while not all([ccd.wiped for ccd in self.runExp]):
+        while not all([detector.wiped for detector in self.runExp]):
             pfsTime.sleep.millisec()
 
         if self.exp.doFinish:
