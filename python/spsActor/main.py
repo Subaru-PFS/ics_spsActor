@@ -7,6 +7,7 @@ import time
 import actorcore.ICC
 from ics.utils.instdata import InstData
 from ics.utils.sps.config import SpsConfig
+from ics.utils.sps.spectroIds import getSite
 from pfscore.gen2 import fetchVisitFromGen2
 from spsActor.utils.callbacks import MetaStatus
 
@@ -16,6 +17,8 @@ class SpsActor(actorcore.ICC.ICC):
         # This sets up the connections to/from the hub, the logger, and the twisted reactor.
         #
         self.name = name
+        self.site = getSite()
+
         actorcore.ICC.ICC.__init__(self,
                                    name,
                                    productName=productName,
@@ -77,16 +80,9 @@ class SpsActor(actorcore.ICC.ICC):
 
     def connectionMade(self):
         if self.everConnected is False:
-            self.allControllers = [s.strip() for s in self.config.get(self.name, 'startingControllers').split(',')]
-
-            if any(self.allControllers):
-                logging.info("Attaching Controllers")
-                self.attachAllControllers()
-                logging.info("All Controllers started")
-
-            self.everConnected = True
             self.requireModels(['gen2'])
             self.reloadConfiguration(self.bcast)
+            self.everConnected = True
 
 
 def main():
