@@ -61,6 +61,11 @@ class HxExposure(QThread):
         self.readVar = None
         self.cleared = None
 
+        # be nice and initialize those variables
+        self.time_exp_end = None
+        self.exptime = None
+        self.dateobs = None
+
         self.state = 'none'
         self.nRead = nRead(exp)
 
@@ -126,6 +131,12 @@ class HxExposure(QThread):
         if visit != self.exp.visit:
             return
 
+        # For regular exposure, finalize is called whenever the shutters close so way before the filepath is generated
+        # But not for darks, so need to be done here.
+        if not self.time_exp_end:
+            dateobs = pfsTime.convert.datetime_to_isoformat(pfsTime.convert.datetime_from_timestamp(self.wipedAt))
+            self.finalize(None, visit, dateobs=dateobs, exptime=self.nRead * HxExposure.rampTime)
+
         self.readVar = keyVar
 
     def _ramp(self, cmd):
@@ -153,10 +164,6 @@ class HxExposure(QThread):
 
         try:
             self._ramp(cmd)
-            self.finalize(cmd, visit,
-                          dateobs=pfsTime.convert.datetime_to_isoformat(
-                              pfsTime.convert.datetime_from_timestamp(self.wipedAt)),
-                          exptime=self.nRead * HxExposure.rampTime)
 
         except Exception as e:
             self.clearExposure(cmd)
