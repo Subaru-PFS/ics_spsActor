@@ -35,10 +35,10 @@ class HxExposure(QThread):
 
         def nRead(exp):
             """Calculate number of read given exptype, exptime."""
-            if exp.exptype == 'bias':
+            if exp.coreExpType == 'bias':
                 # bias does not mean anything for H4, could maybe mean a single read ? not doing it for now.
                 nRead = 0
-            elif exp.exptype == 'dark':
+            elif exp.coreExpType == 'dark':
                 # signal = ramp[-1] - ramp[0] , since ramp[0] is only use to subtract, you need an extra-one.
                 nRead = round(exp.exptime / HxExposure.rampTime) + 1
             else:

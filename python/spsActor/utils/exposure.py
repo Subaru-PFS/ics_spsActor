@@ -208,8 +208,10 @@ class Exposure(object):
     """ Exposure object. """
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, visit, exptype, exptime, cams,
-                 doIIS=False, doTest=False, blueWindow=False, redWindow=False):
+    def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
+                 redWindow=False):
+        # save the actual exptype first
+        self.coreExpType = exptype
         # force exptype == test.
         exptype = 'test' if doTest else exptype
 
