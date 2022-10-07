@@ -115,6 +115,11 @@ class HxExposure(QThread):
     def newFileNameCB(self, keyVar):
         """H4 callback when filename gets generated."""
         filepath = keyVar.getValue(doRaise=False)
+
+        # no need to go further
+        if filepath is None:
+            return
+
         visit, __, __ = getExposureInfo(filepath)
 
         # no need to go further.
