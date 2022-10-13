@@ -96,7 +96,9 @@ class SpecModuleExposure(QThread):
         Note that doFinish==doAbort at the beginning of integration.  """
         # do a ramp and wait for the reset frame to start wiping ccds
         if self.hxExposure:
-            self.hxExposure.ramp(cmd)
+            # I have to pass the expected exposure time to hx.ramp(), because there is no equivalent to ccd.read() .
+            # Pretty disgusting but quick fix, will have a better implementation in the future.
+            self.hxExposure.ramp(cmd, expectedExptime=self.exp.exptime)
             while not self.hxExposure.reset:
                 pfsTime.sleep.millisec()
 
