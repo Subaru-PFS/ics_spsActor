@@ -139,18 +139,21 @@ class HxExposure(QThread):
 
         self.readVar = keyVar
 
-    def _ramp(self, cmd):
+    def _ramp(self, cmd, expectedExptime=0):
         """Send h4 ramp command and handle reply."""
-        cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=f'ramp nread={self.nRead} visit={self.exp.visit}',
+        expectedExptime = f'expectedExptime={expectedExptime}' if expectedExptime else ''
+        cmdStr = f'ramp nread={self.nRead} visit={self.exp.visit} {expectedExptime}'.strip()
+
+        cmdVar = self.actor.crudeCall(cmd, actor=self.hx,  cmdStr=cmdStr,
                                       timeLim=(self.nRead + 1) * HxExposure.rampTime + 30)
         if cmdVar.didFail:
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(cmdVar))
 
     @threaded
-    def ramp(self, cmd):
+    def ramp(self, cmd, expectedExptime):
         """Start h4 ramp."""
         try:
-            self._ramp(cmd)
+            self._ramp(cmd, expectedExptime=expectedExptime)
         except exception.HxRampFailed as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
