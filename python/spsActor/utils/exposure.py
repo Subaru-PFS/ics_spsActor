@@ -291,7 +291,10 @@ class Exposure(object):
 
         if self.storable:
             frames = self.store(cmd, visit)
-            return genFileIds(visit, frames)
+        else:
+            frames = []
+
+        return genFileIds(visit, frames)
 
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure. """
