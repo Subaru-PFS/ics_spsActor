@@ -142,7 +142,7 @@ class HxExposure(QThread):
     def _ramp(self, cmd, expectedExptime=0):
         """Send h4 ramp command and handle reply."""
         expectedExptime = f'expectedExptime={expectedExptime}' if expectedExptime else ''
-        cmdStr = f'ramp nread={self.nRead} visit={self.exp.visit} {expectedExptime}'.strip()
+        cmdStr = f'ramp nread={self.nRead} visit={self.exp.visit} exptype={self.exptype} {expectedExptime}'.strip()
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.hx,  cmdStr=cmdStr,
                                       timeLim=(self.nRead + 1) * HxExposure.rampTime + 30)
