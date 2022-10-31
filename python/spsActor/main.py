@@ -69,12 +69,13 @@ class SpsActor(actorcore.ICC.ICC):
         """ Generate sps config keywords. """
         spsConfig = SpsConfig.fromConfig(self)
 
-        cmd.inform(f"""specModules={','.join(spsConfig.specModules.keys())}""")
-        cmd.inform(f"""spsModules={','.join(spsConfig.spsModules.keys())}""")
-        for specModule in spsConfig.specModules.values():
+        for specModule in spsConfig.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
             self.requireModels([specModule.enuName] + [cam.actorName for cam in specModule.opeCams], cmd)
+
+        cmd.inform(f"""specModules={','.join(spsConfig.keys())}""")
+        cmd.inform(f"""spsModules={','.join(spsConfig.spsModules.keys())}""")
 
         self.spsConfig = spsConfig
 

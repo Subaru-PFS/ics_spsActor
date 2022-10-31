@@ -13,22 +13,26 @@ class SyncCmd(object):
         # Declare the commands we implement. When the actor is started
         # these are registered with the parser, which will call the
         # associated methods when matched. The callbacks will be
-        # passed a le   le argument, the parsed and typed command.
+        # passed a single argument, the parsed and typed command.
         #
         self.name = "sync"
         self.vocab = [
-            ('slit', '<focus> [@(microns)] [@(abs)] [<sm>] [<cams>]', self.slitFocus),
-            ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<sm>] [<cams>]', self.slitDither),
-            ('slit', 'home [<sm>] [<cams>]', self.slitHome),
-            ('rda', '@moveTo @(low|med) [<sm>] [<cams>]', self.rdaMove),
-            ('bia', '@on [strobe] [<power>] [<duty>] [<period>] [<sm>] [<cams>]', self.biaSwitchOn),
-            ('bia', '@off [<sm>] [<cams>]', self.biaSwitchOff),
-            ('bia', '@strobe @off [<sm>] [<cams>]', self.biaSwitchOff),
+            ('slit', '<focus> [@(microns)] [@(abs)] [<specNums>] [<cams>]', self.slitFocus),
+            ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<specNums>] [<cams>]', self.slitDither),
+            ('slit', 'home [<specNums>] [<cams>]', self.slitHome),
+            ('slit', 'start [<specNums>] [<cams>]', self.slitStart),
+            ('slit', 'stop [<specNums>] [<cams>]', self.slitStop),
 
-            ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
+            ('rda', '@moveTo @(low|med) [<specNums>] [<cams>]', self.rdaMove),
+
+            ('bia', '@on [strobe] [<power>] [<duty>] [<period>] [<specNums>] [<cams>]', self.biaSwitchOn),
+            ('bia', '@off [<specNums>] [<cams>]', self.biaSwitchOff),
+            ('bia', '@strobe @off [<specNums>] [<cams>]', self.biaSwitchOff),
+
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
-            ('checkFocus', '[<cams>]', self.checkFocus),
+
+            ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
         ]
 
         # Define typed command arguments for the above commands.
@@ -36,7 +40,7 @@ class SyncCmd(object):
                                         keys.Key('focus', types.Float(), help='focus value'),
                                         keys.Key("cams", types.String() * (1,),
                                                  help='list of camera to take exposure from'),
-                                        keys.Key('sm', types.Int() * (1,),
+                                        keys.Key('specNums', types.Int() * (1,),
                                                  help='spectrograph module(s)'),
                                         keys.Key("a", types.Float(),
                                                  help='the number of ticks/microns to move actuator A'),
@@ -68,7 +72,7 @@ class SyncCmd(object):
             raise RuntimeError('%s controller is not connected.' % self.name)
 
     def findSpecNums(self, cmdKeys):
-        """ get specNum from cmdKeys if specified, get values from spsConfig otherwise.
+        """Get specNum from cmdKeys if specified, get values from spsConfig otherwise.
 
        Parameters
        ----------
@@ -77,15 +81,15 @@ class SyncCmd(object):
        """
         if 'cams' in cmdKeys:
             specNums = list(set([int(cam[-1]) for cam in cmdKeys['cams'].values]))
-        elif 'sm' in cmdKeys:
-            specNums = list(map(int, cmdKeys['sm'].values))
+        elif 'specNums' in cmdKeys:
+            specNums = list(map(int, cmdKeys['specNums'].values))
         else:
             specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
 
         return specNums
 
     def slitFocus(self, cmd):
-        """ Focus multiple slits synchronously. """
+        """Focus multiple slits synchronously."""
         cmdKeys = cmd.cmd.keywords
 
         focus = cmdKeys['focus'].values[0]
@@ -97,7 +101,7 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def slitDither(self, cmd):
-        """ Dither multiple slits synchronously. """
+        """Dither multiple slits synchronously."""
         cmdKeys = cmd.cmd.keywords
 
         ditherX = cmdKeys['x'].values[0] if 'x' in cmdKeys else None
@@ -112,15 +116,31 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def slitHome(self, cmd):
-        """ Dither multiple slits synchronously. """
+        """Move all slits to home."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.findSpecNums(cmdKeys)
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='home')
         syncCmd.process(cmd)
 
+    def slitStart(self, cmd):
+        """Start all slits."""
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.findSpecNums(cmdKeys)
+
+        syncCmd = sync.SlitStart(self.actor, specNums=specNums)
+        syncCmd.process(cmd)
+
+    def slitStop(self, cmd):
+        """Stop all slits"""
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.findSpecNums(cmdKeys)
+
+        syncCmd = sync.SlitStop(self.actor, specNums=specNums)
+        syncCmd.process(cmd)
+
     def rdaMove(self, cmd):
-        """ Move multiple rda synchronously. """
+        """Move multiple rda synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.findSpecNums(cmdKeys)
 
@@ -135,7 +155,7 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def biaSwitchOn(self, cmd):
-        """ Switch multiple bia synchronously. """
+        """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
 
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
@@ -149,7 +169,7 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def biaSwitchOff(self, cmd):
-        """ Switch multiple bia synchronously. """
+        """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
 
         specNums = self.findSpecNums(cmdKeys)
@@ -159,7 +179,7 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def ccdMotors(self, cmd):
-        """ Move multiple ccdMotors synchronously. """
+        """Move multiple ccdMotors synchronously."""
         cmdKeys = cmd.cmd.keywords
         a = cmdKeys['a'].values[0] if 'a' in cmdKeys else None
         b = cmdKeys['b'].values[0] if 'b' in cmdKeys else None
@@ -177,33 +197,15 @@ class SyncCmd(object):
         syncCmd.process(cmd)
 
     def iisOn(self, cmd):
-        """ Turn multiple iis on synchronously. """
+        """Turn multiple iis on synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.findSpecNums(cmdKeys)
 
         cmd.finish()
 
     def iisOff(self, cmd):
-        """ Turn multiple iis off synchronously. """
+        """Turn multiple iis off synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.findSpecNums(cmdKeys)
 
         cmd.finish()
-
-    def checkFocus(self, cmd):
-        """ Focus multiple slits synchronously. """
-        cmdKeys = cmd.cmd.keywords
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
-        cams = self.actor.spsConfig.identify(cams=cams)
-        slitNotFocused = []
-
-        for cam in cams:
-            slitPosition = self.actor.models[f'enu_sm{cam.specNum}'].keyVarDict['slitPosition'].valueList[0]
-
-            if slitPosition != 'home':
-                slitNotFocused.append(cam.specName)
-
-        if slitNotFocused:
-            cmd.fail(f'text="FocusError({",".join(list(set(slitNotFocused)))} slit out of focus...)"')
-        else:
-            cmd.finish()

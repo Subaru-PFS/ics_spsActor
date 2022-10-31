@@ -4,6 +4,10 @@ def factory(className, *args, **kwargs):
         return RdaMoveFailed(*args, **kwargs)
     elif className == "SlitMoveCmd":
         return SlitMoveFailed(*args, **kwargs)
+    elif className == "SlitStartCmd":
+        return SlitStartFailed(*args, **kwargs)
+    elif className == "SlitStopCmd":
+        return SlitStopFailed(*args, **kwargs)
     elif className == "BiaCmd":
         return BiaFailed(*args, **kwargs)
     elif className == "CcdMotorsMoveCmd":
@@ -33,8 +37,10 @@ class ReadFailed(SpsException):
 class EraseFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
+
 class HxRampFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
 
 class ShuttersFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
@@ -45,6 +51,14 @@ class RdaMoveFailed(SpsException):
 
 
 class SlitMoveFailed(SpsException):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
+
+class SlitStartFailed(SpsException):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
+
+class SlitStopFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
 
