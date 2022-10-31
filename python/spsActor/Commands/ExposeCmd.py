@@ -24,7 +24,7 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
 
-        expArgs = '[<visit>] [<cam>] [<cams>] [@doTest]'
+        expArgs = '[<visit>] [<cam>] [<cams>] [@doTest] [@doScienceCheck]'
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -62,6 +62,21 @@ class ExposeCmd(object):
                                         )
 
     def doExposure(self, cmd):
+        def slitInHome(cams, cmd):
+            """Return True if all slits are in home position."""
+            notInHome = []
+
+            for specNum in set([cam.specNum for cam in cams]):
+                slitPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['slitPosition'].getValue()
+
+                if slitPosition != 'home':
+                    notInHome.append(f'sm{specNum}={slitPosition}')
+
+            if notInHome:
+                cmd.fail(f'text="SlitPositionError({" ".join(notInHome)})"')
+
+            return not len(notInHome)
+
         cmdKeys = cmd.cmd.keywords
 
         exptype = None
@@ -81,12 +96,17 @@ class ExposeCmd(object):
         doLampsTiming = 'doShutterTiming' not in cmdKeys
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
+        doScienceCheck = 'doScienceCheck' in cmdKeys
 
         if 'window' in cmdKeys:
             blueWindow = redWindow = cmdKeys['window'].values
 
         blueWindow = cmdKeys['blueWindow'].values if 'blueWindow' in cmdKeys else blueWindow
         redWindow = cmdKeys['redWindow'].values if 'redWindow' in cmdKeys else redWindow
+
+        # science check boils down to checking slit position right now, but more to come.
+        if doScienceCheck and not slitInHome(cams, cmd=cmd):
+            return
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,

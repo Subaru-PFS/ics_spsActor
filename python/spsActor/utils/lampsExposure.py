@@ -10,7 +10,7 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         exposure.SpecModuleExposure.__init__(self, *args, **kwargs)
 
     def lightSource(self):
-        return self.exp.actor.spsConfig.specModules[self.specName].lightSource
+        return self.exp.actor.spsConfig[self.specName].lightSource
 
     def integrate(self, cmd):
         """ Command shutters to expose with given overhead. """

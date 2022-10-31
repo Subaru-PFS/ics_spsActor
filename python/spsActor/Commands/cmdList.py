@@ -20,6 +20,22 @@ class SlitMove(sync.SpsCmd):
         self.attachThreads([SlitMoveCmd(self, specNum, cmdStr, SlitMove.timeLim) for specNum in specNums])
 
 
+class SlitStart(sync.SpsCmd):
+    timeLim = 120
+
+    def __init__(self, spsActor, specNums):
+        sync.SpsCmd.__init__(self, spsActor)
+        self.attachThreads([SlitStartCmd(self, specNum, 'slit start', SlitStart.timeLim) for specNum in specNums])
+
+
+class SlitStop(sync.SpsCmd):
+    timeLim = 30
+
+    def __init__(self, spsActor, specNums):
+        sync.SpsCmd.__init__(self, spsActor)
+        self.attachThreads([SlitStopCmd(self, specNum, 'slit stop', SlitStop.timeLim) for specNum in specNums])
+
+
 class BiaSwitch(sync.SpsCmd):
     timeLim = 10
 
@@ -46,31 +62,53 @@ class CcdErase(sync.SpsCmd):
         self.attachThreads([CcdEraseCmd(self, cam, 'erase', CcdErase.timeLim) for cam in cams])
 
 
-class RdaMoveCmd(sync.CmdThread):
+class EnuThread(sync.CmdThread):
     def __init__(self, spsCmd, specNum, cmdStr, timeLim):
         sync.CmdThread.__init__(self, spsCmd,
                                 actor=f'enu_sm{specNum}', cmdStr=cmdStr, timeLim=timeLim)
 
 
-class SlitMoveCmd(sync.CmdThread):
-    def __init__(self, spsCmd, specNum, cmdStr, timeLim):
-        sync.CmdThread.__init__(self, spsCmd,
-                                actor=f'enu_sm{specNum}', cmdStr=cmdStr, timeLim=timeLim)
-
-
-class BiaCmd(sync.CmdThread):
-    def __init__(self, spsCmd, specNum, cmdStr, timeLim):
-        sync.CmdThread.__init__(self, spsCmd,
-                                actor=f'enu_sm{specNum}', cmdStr=cmdStr, timeLim=timeLim)
-
-
-class CcdMotorsMoveCmd(sync.CmdThread):
+class XcuThread(sync.CmdThread):
     def __init__(self, spsCmd, cam, cmdStr, timeLim):
         sync.CmdThread.__init__(self, spsCmd,
                                 actor=f'xcu_{cam}', cmdStr=cmdStr, timeLim=timeLim)
 
 
-class CcdEraseCmd(sync.CmdThread):
+class CcdThread(sync.CmdThread):
     def __init__(self, spsCmd, cam, cmdStr, timeLim):
         sync.CmdThread.__init__(self, spsCmd,
                                 actor=f'ccd_{cam}', cmdStr=cmdStr, timeLim=timeLim)
+
+
+class HxThread(sync.CmdThread):
+    def __init__(self, spsCmd, cam, cmdStr, timeLim):
+        sync.CmdThread.__init__(self, spsCmd,
+                                actor=f'hx_{cam}', cmdStr=cmdStr, timeLim=timeLim)
+
+
+class RdaMoveCmd(EnuThread):
+    """"""
+
+
+class SlitMoveCmd(EnuThread):
+    """"""
+
+
+class SlitStartCmd(EnuThread):
+    """"""
+
+
+class SlitStopCmd(EnuThread):
+    """"""
+
+
+class BiaCmd(EnuThread):
+    """"""
+
+
+class CcdMotorsMoveCmd(XcuThread):
+    """"""
+
+
+class CcdEraseCmd(CcdThread):
+    """"""
