@@ -28,7 +28,7 @@ class SpecModuleExposure(QThread):
     def __init__(self, exp, specNum, cams):
         self.exp = exp
         # have specModule config handy.
-        self.specConfig = exp.actor.spsConfig.specModules[f'sm{specNum}']
+        self.specConfig = exp.actor.spsConfig[f'sm{specNum}']
 
         self.cams = cams
         self.enuName = f'enu_{self.specName}'
@@ -101,12 +101,16 @@ class SpecModuleExposure(QThread):
             self.hxExposure.ramp(cmd, expectedExptime=self.exp.exptime)
             while not self.hxExposure.reset:
                 pfsTime.sleep.millisec()
+                # if the hx.ramp() fails you want to escape that loop.
+                if self.hxExposure.cleared:
+                    raise exception.ExposureAborted
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
                 continue
             camExp.wipe(cmd)
 
+        # if one fails, it cleared itself out.
         while not all([detector.wiped for detector in self.runExp]):
             pfsTime.sleep.millisec()
 
