@@ -5,7 +5,6 @@ import logging
 import time
 
 import actorcore.ICC
-from ics.utils.instdata import InstData
 from ics.utils.sps.config import SpsConfig
 from ics.utils.sps.spectroIds import getSite
 from pfscore.gen2 import fetchVisitFromGen2
@@ -26,7 +25,6 @@ class SpsActor(actorcore.ICC.ICC):
 
         self.logger.setLevel(logLevel)
         self.everConnected = False
-        self.instData = InstData(self)
         self.spsConfig = None
         self.metaStatus = MetaStatus(self)
 

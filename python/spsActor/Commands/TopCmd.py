@@ -58,11 +58,11 @@ class TopCmd(object):
                 lightSource = cmdKeys[f'sm{specNum}'].values[0].strip().lower()
             except KeyError:
                 continue
-            spsConfig.declareLightSource(lightSource, specNum=specNum, spsData=self.actor.instData)
+            spsConfig.declareLightSource(lightSource, specNum=specNum, spsData=self.actor.actorData)
 
         if not lightSource:
             [lightSource] = [source for source in SpecModule.lightSources if source in cmdKeys]
-            spsConfig.declareLightSource(lightSource, spsData=self.actor.instData)
+            spsConfig.declareLightSource(lightSource, spsData=self.actor.actorData)
 
         self.actor.genSpsKeys(cmd)
         cmd.finish()
