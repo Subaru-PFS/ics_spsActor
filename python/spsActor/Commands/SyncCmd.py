@@ -4,6 +4,7 @@
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 import spsActor.Commands.cmdList as sync
+from ics.utils.threading import singleShot
 
 
 class SyncCmd(object):
@@ -88,6 +89,7 @@ class SyncCmd(object):
 
         return specNums
 
+    @singleShot
     def slitFocus(self, cmd):
         """Focus multiple slits synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -100,6 +102,7 @@ class SyncCmd(object):
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='', focus=focus, microns=microns, abs=abs)
         syncCmd.process(cmd)
 
+    @singleShot
     def slitDither(self, cmd):
         """Dither multiple slits synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -115,6 +118,7 @@ class SyncCmd(object):
                                 x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
         syncCmd.process(cmd)
 
+    @singleShot
     def slitHome(self, cmd):
         """Move all slits to home."""
         cmdKeys = cmd.cmd.keywords
@@ -123,6 +127,7 @@ class SyncCmd(object):
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='home')
         syncCmd.process(cmd)
 
+    @singleShot
     def slitStart(self, cmd):
         """Start all slits."""
         cmdKeys = cmd.cmd.keywords
@@ -131,6 +136,7 @@ class SyncCmd(object):
         syncCmd = sync.SlitStart(self.actor, specNums=specNums)
         syncCmd.process(cmd)
 
+    @singleShot
     def slitStop(self, cmd):
         """Stop all slits"""
         cmdKeys = cmd.cmd.keywords
@@ -139,6 +145,7 @@ class SyncCmd(object):
         syncCmd = sync.SlitStop(self.actor, specNums=specNums)
         syncCmd.process(cmd)
 
+    @singleShot
     def rdaMove(self, cmd):
         """Move multiple rda synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -154,6 +161,7 @@ class SyncCmd(object):
         syncCmd = sync.RdaMove(self.actor, specNums=specNums, targetPosition=targetPosition)
         syncCmd.process(cmd)
 
+    @singleShot
     def biaSwitchOn(self, cmd):
         """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -168,6 +176,7 @@ class SyncCmd(object):
                                  strobe=strobe, power=power, period=period, duty=duty)
         syncCmd.process(cmd)
 
+    @singleShot
     def biaSwitchOff(self, cmd):
         """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -178,6 +187,7 @@ class SyncCmd(object):
         syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
         syncCmd.process(cmd)
 
+    @singleShot
     def ccdMotors(self, cmd):
         """Move multiple ccdMotors synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -196,6 +206,7 @@ class SyncCmd(object):
 
         syncCmd.process(cmd)
 
+    @singleShot
     def iisOn(self, cmd):
         """Turn multiple iis on synchronously."""
         cmdKeys = cmd.cmd.keywords
@@ -203,6 +214,7 @@ class SyncCmd(object):
 
         cmd.finish()
 
+    @singleShot
     def iisOff(self, cmd):
         """Turn multiple iis off synchronously."""
         cmdKeys = cmd.cmd.keywords
