@@ -3,8 +3,8 @@
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
+from ics.utils.sps.config import SpsConfig, LightSource
 from ics.utils.sps.spectroIds import SpectroIds
-from ics.utils.sps.config import SpecModule, SpsConfig
 
 
 class TopCmd(object):
@@ -17,7 +17,7 @@ class TopCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a single argument, the parsed and typed command.
         #
-        lightSources = '|'.join(SpecModule.lightSources)
+        lightSources = '|'.join(LightSource.validNames)
         self.vocab = [
             ('ping', '', self.ping),
             ('status', '', self.status),
@@ -61,7 +61,7 @@ class TopCmd(object):
             spsConfig.declareLightSource(lightSource, specNum=specNum, spsData=self.actor.actorData)
 
         if not lightSource:
-            [lightSource] = [source for source in SpecModule.lightSources if source in cmdKeys]
+            [lightSource] = [source for source in LightSource.validNames if source in cmdKeys]
             spsConfig.declareLightSource(lightSource, spsData=self.actor.actorData)
 
         self.actor.genSpsKeys(cmd)
