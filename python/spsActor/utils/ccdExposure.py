@@ -33,6 +33,8 @@ class CcdExposure(QThread):
         QThread.__init__(self, self.exp.actor, self.ccd)
         QThread.start(self)
 
+        self.activatedState = []
+
         # add callback for shutters state, useful to fire process asynchronously.
         self.stateKeyVar = exp.actor.models[self.ccd].keyVarDict['exposureState']
         self.stateKeyVar.addCallback(self.exposureState)
@@ -51,7 +53,7 @@ class CcdExposure(QThread):
 
     @property
     def wiped(self):
-        return self.wipedAt is not None
+        return 'wiping' in self.activatedState and 'integrating' in self.activatedState
 
     @property
     def wipeFlavour(self):
@@ -72,6 +74,7 @@ class CcdExposure(QThread):
         """Exposure State callback."""
         state = keyVar.getValue(doRaise=False)
         # track ccd state.
+        self.activatedState.append(state)
         self.actor.bcast.debug(f'text="{self.ccd} {state}"')
 
     def _wipe(self, cmd):
