@@ -34,6 +34,7 @@ class SyncCmd(object):
             ('iis', '<off> [<cams>]', self.iisOff),
 
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
+            ('ccdMotors', 'toFocus [<cams>]', self.ccdMotorsToFocus),
         ]
 
         # Define typed command arguments for the above commands.
@@ -204,6 +205,17 @@ class SyncCmd(object):
         syncCmd = sync.CcdMotorsMove(self.actor, cams=cams, cmdHead='move',
                                      a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
 
+        syncCmd.process(cmd)
+
+    @singleShot
+    def ccdMotorsToFocus(self, cmd):
+        """Move multiple ccdMotors synchronously."""
+        cmdKeys = cmd.cmd.keywords
+
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
+        cams = self.actor.spsConfig.identify(cams=cams)
+
+        syncCmd = sync.CcdMotorsMove(self.actor, cams=cams, cmdHead='toFocus')
         syncCmd.process(cmd)
 
     @singleShot
