@@ -127,7 +127,7 @@ class SpecModuleExposure(QThread):
 
         shutterMask = self.shutterMask()
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
-                                          cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask}',
+                                          cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask} visit={self.exp.visit}',
                                           timeLim=shutterTime + SpecModuleExposure.EnuExposeTimeMargin)
         if self.exp.doAbort:
             raise exception.ExposureAborted
