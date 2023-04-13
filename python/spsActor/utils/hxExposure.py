@@ -5,6 +5,7 @@ import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
+from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from spsActor.utils.ids import SpsIds as idsUtils
 
@@ -57,14 +58,16 @@ class HxExposure(QThread):
         QThread.start(self)
 
         self.reset = False
+        self.doStop = False
+
         self.wipedAt = None
         self.readVar = None
         self.cleared = None
 
         # be nice and initialize those variables
         self.time_exp_end = None
-        self.exptime = None
-        self.dateobs = None
+        self.exptime = -9998.0
+        self.dateobs = 'None'
 
         self.state = 'none'
         self.nRead = nRead(exp)
@@ -117,6 +120,13 @@ class HxExposure(QThread):
         elif nGroup == 1 and nRead == self.nRead:
             self.state = 'idle'
 
+        # if it's a regular shutter exposure, when n-1 read is finished call finishRamp.
+        doFinalize = self.exp.coreExpType != 'dark' and nRead == (self.nRead - 1)
+
+        if self.doStop or doFinalize:
+            doStop = nRead < self.nRead and nRead != (self.nRead - 1)
+            self._finishRamp(self.exp.cmd, doStop=doStop)
+
     def newFileNameCB(self, keyVar):
         """H4 callback when filename gets generated."""
         filepath = keyVar.getValue(doRaise=False)
@@ -131,10 +141,12 @@ class HxExposure(QThread):
         if visit != self.exp.visit:
             return
 
-        # For regular exposure, finalize is called whenever the shutters close so way before the filepath is generated
-        # But not for darks, so need to be done here.
+        # For regular exposure, finalize is called whenever the shutters close
+        # so way before the filepath is generated
+        # But not for darks, so it needs to be done here.
         if not self.time_exp_end:
-            dateobs = pfsTime.convert.datetime_to_isoformat(pfsTime.convert.datetime_from_timestamp(self.wipedAt))
+            dateobs = pfsTime.convert.datetime_to_isoformat(
+                pfsTime.convert.datetime_from_timestamp(self.wipedAt))
             self.finalize(None, visit, dateobs=dateobs, exptime=self.nRead * HxExposure.rampTime)
 
         self.readVar = keyVar
@@ -144,7 +156,7 @@ class HxExposure(QThread):
         expectedExptime = f'expectedExptime={expectedExptime}' if expectedExptime else ''
         cmdStr = f'ramp nread={self.nRead} visit={self.exp.visit} exptype={self.exptype} {expectedExptime}'.strip()
 
-        cmdVar = self.actor.crudeCall(cmd, actor=self.hx,  cmdStr=cmdStr,
+        cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr,
                                       timeLim=(self.nRead + 2) * HxExposure.rampTime + 60)
         if cmdVar.didFail:
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(cmdVar))
@@ -160,7 +172,7 @@ class HxExposure(QThread):
 
     @threaded
     def expose(self, cmd, visit):
-        """ Full exposure routine for calib object. """
+        """Full exposure routine for calib object. """
         # no need to go further.
         if not self.nRead:
             return
@@ -203,6 +215,14 @@ class HxExposure(QThread):
             return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
+
+    @singleShot
+    def _finishRamp(self, cmd, doStop):
+        """Finish ramp"""
+        stopRamp = 'stopRamp' if doStop else ''
+        cmdStr = f'ramp finish exptime={self.exptime} obstime={self.dateobs} {stopRamp}'.strip()
+
+        return self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr, timeLim=60)
 
     def abort(self, cmd):
         """Just a prototype."""
