@@ -58,11 +58,11 @@ class HxExposure(QThread):
         QThread.start(self)
 
         self.reset = False
-        self.doStop = False
+        self.doFinalize = False
 
         self.wipedAt = None
+        self.rampVar = None
         self.readVar = None
-        self.cleared = None
 
         # be nice and initialize those variables
         self.time_exp_end = None
@@ -80,7 +80,9 @@ class HxExposure(QThread):
         self.filename.addCallback(self.newFileNameCB)
 
         # gotcha to pretend this is a ccd.
-        self.read = self.finalize
+        self.read = self.keepShutterKeys
+        # there is no concept of clearing / aborting, so just do a final read.
+        self.abort = self.finish = self.clearExposure = self.declareFinalRead
 
     @property
     def exptype(self):
@@ -92,7 +94,11 @@ class HxExposure(QThread):
 
     @property
     def isFinished(self):
-        return self.cleared or self.storable or self.nRead == 0
+        return self.storable or self.rampVar or self.nRead == 0
+
+    @property
+    def cleared(self):
+        return self.rampVar and self.rampVar.didFail
 
     @property
     def wiped(self):
@@ -120,11 +126,10 @@ class HxExposure(QThread):
         elif nGroup == 1 and nRead == self.nRead:
             self.state = 'idle'
 
-        # if it's a regular shutter exposure, when n-1 read is finished call finishRamp.
-        doFinalize = self.exp.coreExpType != 'dark' and nRead == (self.nRead - 1)
+        doFinalize = self.doFinalize and nRead < self.nRead  # it is too late otherwise in any-case.
 
-        if self.doStop or doFinalize:
-            doStop = nRead < self.nRead and nRead != (self.nRead - 1)
+        if doFinalize:
+            doStop = nRead < (self.nRead - 1)
             self._finishRamp(self.exp.cmd, doStop=doStop)
 
     def newFileNameCB(self, keyVar):
@@ -147,7 +152,7 @@ class HxExposure(QThread):
         if not self.time_exp_end:
             dateobs = pfsTime.convert.datetime_to_isoformat(
                 pfsTime.convert.datetime_from_timestamp(self.wipedAt))
-            self.finalize(None, visit, dateobs=dateobs, exptime=self.nRead * HxExposure.rampTime)
+            self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.nRead * HxExposure.rampTime)
 
         self.readVar = keyVar
 
@@ -156,10 +161,11 @@ class HxExposure(QThread):
         expectedExptime = f'expectedExptime={expectedExptime}' if expectedExptime else ''
         cmdStr = f'ramp nread={self.nRead} visit={self.exp.visit} exptype={self.exptype} {expectedExptime}'.strip()
 
-        cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr,
-                                      timeLim=(self.nRead + 2) * HxExposure.rampTime + 60)
-        if cmdVar.didFail:
-            raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(cmdVar))
+        self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr,
+                                            timeLim=(self.nRead + 2) * HxExposure.rampTime + 60)
+
+        if self.rampVar.didFail:
+            raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(self.rampVar))
 
     @threaded
     def ramp(self, cmd, expectedExptime):
@@ -179,13 +185,39 @@ class HxExposure(QThread):
 
         try:
             self._ramp(cmd)
-
         except Exception as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
 
-    def finalize(self, cmd, visit, dateobs, exptime):
-        """Called to finalize exposure, from specModule thread, after shutters are closed for example."""
+    def declareFinalRead(self, cmd=None):
+        """Declare that the next read will be the final one."""
+        self.doFinalize = True  # actually the only way to reach the main thread.
+
+    def startAndWaitForReset(self, cmd):
+        """Minor optimization to start wiping ccds when reset frame is done?. """
+        # I have to pass the expected exposure time to hx.ramp(), will be overriden with _rampFinish.
+        self.ramp(cmd, expectedExptime=self.exp.exptime)
+
+        while not self.reset:
+            pfsTime.sleep.millisec()
+            # if the hx.ramp() fails you want to escape that loop.
+            if self.cleared:
+                raise exception.ExposureAborted
+
+            if self.exp.doFinish or self.exp.doAbort:
+                self.declareFinalRead()
+
+    @singleShot
+    def _finishRamp(self, cmd, doStop):
+        """Finish ramp, which will gather the final fits keys."""
+        stopRamp = 'stopRamp' if doStop else ''
+        cmdStr = f'ramp finish exptime={self.exptime} obstime={self.dateobs} {stopRamp}'.strip()
+
+        cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr, timeLim=60)
+        self.actor.logger.info(f'{self.hx} ramp finish didFail({cmdVar.didFail})')
+
+    def keepShutterKeys(self, cmd, visit, dateobs, exptime):
+        """Keep exposure info from the shutters."""
         self.dateobs = dateobs
         self.exptime = round(exptime, 3)
         self.time_exp_end = pfsTime.timestamp()
@@ -215,26 +247,6 @@ class HxExposure(QThread):
             return cam.camName
         except Exception as e:
             self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
-
-    @singleShot
-    def _finishRamp(self, cmd, doStop):
-        """Finish ramp"""
-        stopRamp = 'stopRamp' if doStop else ''
-        cmdStr = f'ramp finish exptime={self.exptime} obstime={self.dateobs} {stopRamp}'.strip()
-
-        return self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr, timeLim=60)
-
-    def abort(self, cmd):
-        """Just a prototype."""
-        pass
-
-    def finish(self, cmd):
-        """Just a prototype."""
-        pass
-
-    def clearExposure(self, cmd):
-        """Just a prototype."""
-        self.cleared = True
 
     def handleTimeout(self):
         """Just a prototype."""

@@ -94,16 +94,19 @@ class SpecModuleExposure(QThread):
     def wipe(self, cmd):
         """Wipe running CcdExposure and wait for integrating state.
         Note that doFinish==doAbort at the beginning of integration."""
+
+        def checkForEarlyFinish():
+            if self.exp.doFinish:
+                raise exception.EarlyFinish
+
+            if self.exp.doAbort or any(self.clearedExp):
+                raise exception.ExposureAborted
+
         # do a ramp and wait for the reset frame to start wiping ccds
         if self.hxExposure:
-            # I have to pass the expected exposure time to hx.ramp(), because there is no equivalent to ccd.read() .
-            # Pretty disgusting but quick fix, will have a better implementation in the future.
-            self.hxExposure.ramp(cmd, expectedExptime=self.exp.exptime)
-            while not self.hxExposure.reset:
-                pfsTime.sleep.millisec()
-                # if the hx.ramp() fails you want to escape that loop.
-                if self.hxExposure.cleared:
-                    raise exception.ExposureAborted
+            self.hxExposure.startAndWaitForReset(cmd)
+
+        checkForEarlyFinish()
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
@@ -114,11 +117,7 @@ class SpecModuleExposure(QThread):
         while not all([detector.wiped for detector in self.runExp]):
             pfsTime.sleep.millisec()
 
-        if self.exp.doFinish:
-            raise exception.EarlyFinish
-
-        if self.exp.doAbort or any(self.clearedExp):
-            raise exception.ExposureAborted
+        checkForEarlyFinish()
 
     def integrate(self, cmd, shutterTime=None):
         """Integrate for both calib and regular exposure."""
@@ -171,11 +170,17 @@ class SpecModuleExposure(QThread):
         # track shutters state.
         self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
 
+        didExpose = self.shuttersOpen and 'close' in state
+
         # should cover all cases.
         self.shuttersOpen = 'open' in state
 
         if self.shuttersOpen:
             self.shuttersOpenCB()
+
+        # Declare final read, that will call finishRamp on the next hxRead callback.
+        if didExpose and self.hxExposure:
+            self.hxExposure.declareFinalRead()
 
     def shuttersOpenCB(self):
         """Callback called whenenever shutters are opened."""
@@ -281,8 +286,7 @@ class Exposure(object):
 
     def instantiate(self, cams):
         """Create underlying specModuleExposure threads."""
-        return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in
-                idsUtils.splitCamPerSpec(cams).items()]
+        return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in idsUtils.splitCamPerSpec(cams).items()]
 
     def waitForCompletion(self, cmd, visit):
         """Create underlying specModuleExposure threads."""
