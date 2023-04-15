@@ -218,6 +218,7 @@ class SpecModuleExposure(QThread):
 class Exposure(object):
     """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
+    expTimeOverHead = 0.5
 
     def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False):
@@ -354,6 +355,7 @@ class Exposure(object):
 
 class DarkExposure(Exposure):
     """CaliDarkExposureb object."""
+    expTimeOverHead = 0
 
     def __init__(self, *args, **kwargs):
         Exposure.__init__(self, *args, **kwargs)

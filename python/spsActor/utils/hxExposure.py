@@ -46,7 +46,7 @@ class HxExposure(QThread):
                 # signal = ramp[-1] - ramp[0], you need a clean ramp[0] that will be subtracted, and you need an extra
                 # after the shutter/lamp transition.
                 # In other words you always need to bracket your signal with clean/stable ramps.
-                nRead = exp.exptime // HxExposure.rampTime + 3
+                nRead = (exp.exptime + exp.expTimeOverHead) // HxExposure.rampTime + 3
 
             return int(nRead)
 
