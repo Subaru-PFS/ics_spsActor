@@ -198,14 +198,14 @@ class HxExposure(QThread):
         # I have to pass the expected exposure time to hx.ramp(), will be overriden with _rampFinish.
         self.ramp(cmd, expectedExptime=self.exp.exptime)
 
-        while not self.reset:
-            pfsTime.sleep.millisec()
-            # if the hx.ramp() fails you want to escape that loop.
-            if self.cleared:
-                raise exception.ExposureAborted
-
-            if self.exp.doFinish or self.exp.doAbort:
-                self.declareFinalRead()
+        # while not self.reset:
+        #     pfsTime.sleep.millisec()
+        #     # if the hx.ramp() fails you want to escape that loop.
+        #     if self.cleared:
+        #         raise exception.ExposureAborted
+        #
+        #     if self.exp.doFinish or self.exp.doAbort:
+        #         self.declareFinalRead()
 
     @singleShot
     def _finishRamp(self, cmd, doStop):
