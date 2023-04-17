@@ -40,6 +40,7 @@ class Exposure(exposure.Exposure):
     # Lamp thread is then waiting on go signal which only happen when all shutters are all opened.
 
     shutterOverHead = 10
+    expTimeOverHead = 1
     SpecModuleExposureClass = SpecModuleExposure
     LampControlClass = lampsControl.LampsControl
 

@@ -22,7 +22,7 @@ def factory(exp, cam):
 
 
 class SpecModuleExposure(QThread):
-    """ Placeholder to handle spectograph module cmd threading. """
+    """Placeholder to handle spectograph module cmd threading."""
     EnuExposeTimeMargin = 5
 
     def __init__(self, exp, specNum, cams):
@@ -39,9 +39,9 @@ class SpecModuleExposure(QThread):
         self.camExp = [factory(exp, cam) for cam in cams]
 
         # add callback for shutters state, useful to fire process asynchronously.
+        self.shuttersOpen = False
         self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
         self.shuttersKeyVar.addCallback(self.shuttersState)
-        self.shuttersOpen = None
 
         # instantiate IIS control if required.
         if self.doControlIIS:
@@ -82,28 +82,31 @@ class SpecModuleExposure(QThread):
         return all(camExp.isFinished for camExp in self.camExp)
 
     def currently(self, state):
-        """ current camExp states  """
+        """Current camExp states."""
         return [camExp.state == state for camExp in self.runExp]
 
     def shutterMask(self):
-        """ Build argument to enu shutters expose cmd. """
+        """Build argument to enu shutters expose cmd."""
         shutters = list(set(sum([self.specConfig.shutterSet(arm, lightBeam=True) for arm in self.arms], [])))
         bitMask = 0 if not shutters else sum([shutter.bitMask for shutter in shutters])
         return f'0x{bitMask:x}'
 
     def wipe(self, cmd):
-        """ Wipe running CcdExposure and wait for integrating state.
-        Note that doFinish==doAbort at the beginning of integration.  """
+        """Wipe running CcdExposure and wait for integrating state.
+        Note that doFinish==doAbort at the beginning of integration."""
+
+        def checkForEarlyFinish():
+            if self.exp.doFinish:
+                raise exception.EarlyFinish
+
+            if self.exp.doAbort or any(self.clearedExp):
+                raise exception.ExposureAborted
+
         # do a ramp and wait for the reset frame to start wiping ccds
         if self.hxExposure:
-            # I have to pass the expected exposure time to hx.ramp(), because there is no equivalent to ccd.read() .
-            # Pretty disgusting but quick fix, will have a better implementation in the future.
-            self.hxExposure.ramp(cmd, expectedExptime=self.exp.exptime)
-            while not self.hxExposure.reset:
-                pfsTime.sleep.millisec()
-                # if the hx.ramp() fails you want to escape that loop.
-                if self.hxExposure.cleared:
-                    raise exception.ExposureAborted
+            self.hxExposure.startAndWaitForReset(cmd)
+
+        checkForEarlyFinish()
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
@@ -114,14 +117,10 @@ class SpecModuleExposure(QThread):
         while not all([detector.wiped for detector in self.runExp]):
             pfsTime.sleep.millisec()
 
-        if self.exp.doFinish:
-            raise exception.EarlyFinish
-
-        if self.exp.doAbort or any(self.clearedExp):
-            raise exception.ExposureAborted
+        checkForEarlyFinish()
 
     def integrate(self, cmd, shutterTime=None):
-        """ Integrate for both calib and regular exposure. """
+        """Integrate for both calib and regular exposure."""
         # exposure time can have some overhead.
         shutterTime = self.exp.exptime if shutterTime is None else shutterTime
 
@@ -144,7 +143,7 @@ class SpecModuleExposure(QThread):
         return exptime, dateobs
 
     def read(self, cmd, visit, exptime, dateobs):
-        """ Read running CcdExposure and wait for idle state. """
+        """Read running CcdExposure and wait for idle state."""
         for camExp in self.runExp:
             camExp.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
@@ -153,7 +152,7 @@ class SpecModuleExposure(QThread):
 
     @threaded
     def expose(self, cmd, visit):
-        """ Full exposure routine, exceptions are catched and handled under the cover. """
+        """Full exposure routine, exceptions are catched and handled under the cover."""
 
         try:
             self.wipe(cmd)
@@ -165,11 +164,13 @@ class SpecModuleExposure(QThread):
             self.exp.abort(cmd, reason=str(e))
 
     def shuttersState(self, keyVar):
-        """ Shutters state callback, call shuttersOpenCB() whenever open. """
+        """Shutters state callback, call shuttersOpenCB() whenever open."""
         state = keyVar.getValue(doRaise=False)
 
         # track shutters state.
         self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
+
+        didExpose = self.shuttersOpen and 'close' in state
 
         # should cover all cases.
         self.shuttersOpen = 'open' in state
@@ -177,29 +178,33 @@ class SpecModuleExposure(QThread):
         if self.shuttersOpen:
             self.shuttersOpenCB()
 
+        # Declare final read, that will call finishRamp on the next hxRead callback.
+        if didExpose and self.hxExposure:
+            self.hxExposure.declareFinalRead()
+
     def shuttersOpenCB(self):
-        """ callback called whenenever shutters are opened. """
+        """Callback called whenenever shutters are opened."""
         # fire IIS is required.
         if self.doControlIIS:
             self.iisControl.goSignal = True
 
     def clearExposure(self, cmd):
-        """ Clear all running CcdExposure. """
+        """Clear all running CcdExposure."""
         for camExp in self.runExp:
             camExp.clearExposure(cmd)
 
     def abort(self, cmd):
-        """ Command shutters to abort exposure. """
+        """Command shutters to abort exposure."""
         if any(self.currently(state='integrating')):
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
 
     def finish(self, cmd):
-        """ Command shutters to finish exposure. """
+        """Command shutters to finish exposure."""
         if any(self.currently(state='integrating')):
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
 
     def exit(self):
-        """ Free up all resources. """
+        """Free up all resources."""
         # remove shutters callback.
         self.shuttersKeyVar.removeCallback(self.shuttersState)
 
@@ -211,8 +216,9 @@ class SpecModuleExposure(QThread):
 
 
 class Exposure(object):
-    """ Exposure object. """
+    """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
+    expTimeOverHead = 0.5
 
     def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False):
@@ -220,6 +226,7 @@ class Exposure(object):
         self.coreExpType = exptype
         # force exptype == test.
         exptype = 'test' if doTest else exptype
+        self.cmd = None
 
         self.doAbort = False
         self.doFinish = False
@@ -279,11 +286,11 @@ class Exposure(object):
             self.readFlavour[arm] = f'row0={row0} nrows={nrows}'
 
     def instantiate(self, cams):
-        """ Create underlying specModuleExposure threads.  """
+        """Create underlying specModuleExposure threads."""
         return [self.SpecModuleExposureClass(self, smId, cams) for smId, cams in idsUtils.splitCamPerSpec(cams).items()]
 
     def waitForCompletion(self, cmd, visit):
-        """ Create underlying specModuleExposure threads.  """
+        """Create underlying specModuleExposure threads."""
 
         def genFileIds(visit, frames):
             return f"""fileIds={visit},{qstr(';'.join(frames))},0x{idsUtils.getMask(frames):04x}"""
@@ -301,7 +308,7 @@ class Exposure(object):
         return genFileIds(visit, frames)
 
     def abort(self, cmd, reason="ExposureAborted()"):
-        """ Abort current exposure. """
+        """ Abort current exposure."""
         self.doAbort = True
         self.failures.add(reason)
 
@@ -309,14 +316,18 @@ class Exposure(object):
             thread.abort(cmd)
 
     def finish(self, cmd):
-        """ Finish current exposure. """
+        """Finish current exposure."""
         self.doFinish = True
 
         for thread in self.threads:
             thread.finish(cmd)
 
     def start(self, cmd, visit):
-        """ Start all spectrograph module exposures. """
+        """Start all spectrograph module exposures."""
+        # just convenient.
+        if not self.cmd:
+            self.cmd = cmd
+
         # start lamp thread if any.
         for thread in self.lampsThreads:
             thread.start(cmd)
@@ -325,14 +336,14 @@ class Exposure(object):
             thread.expose(cmd, visit)
 
     def exit(self):
-        """ Free up all resources. """
+        """Free up all resources."""
         for thread in self.threads:
             thread.exit()
 
         self.smThreads.clear()
 
     def store(self, cmd, visit):
-        """Store Exposure in sps_visit table in opdb database. """
+        """Store Exposure in sps_visit table in opdb database."""
         try:
             opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
         except Exception as e:
@@ -343,7 +354,8 @@ class Exposure(object):
 
 
 class DarkExposure(Exposure):
-    """ CaliDarkExposureb object. """
+    """CaliDarkExposureb object."""
+    expTimeOverHead = 0
 
     def __init__(self, *args, **kwargs):
         Exposure.__init__(self, *args, **kwargs)
@@ -357,5 +369,5 @@ class DarkExposure(Exposure):
         return []
 
     def instantiate(self, cams):
-        """ Create underlying CcdExposure threads object. """
+        """Create underlying CcdExposure threads object."""
         return [factory(self, cam) for cam in cams]
