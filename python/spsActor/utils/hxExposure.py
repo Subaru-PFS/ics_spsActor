@@ -199,7 +199,7 @@ class HxExposure(QThread):
         self.ramp(cmd, expectedExptime=self.exp.exptime)
 
         # sm1 wipe is too slow for this optimization for now, so skip it.
-        if self.cam == 'n1':
+        if str(self.cam) == 'n1':
             return
 
         while not self.reset:
