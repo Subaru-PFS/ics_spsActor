@@ -195,13 +195,23 @@ class SpecModuleExposure(QThread):
 
     def abort(self, cmd):
         """Command shutters to abort exposure."""
-        if any(self.currently(state='integrating')):
+        if self.shuttersOpen:
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
+            return
+
+        # if we're not integrating, finishRamp as soon as possible.
+        if self.hxExposure and self.hxExposure.preparingForShutterOpen:
+            self.hxExposure.finishRampASAP(cmd)
 
     def finish(self, cmd):
         """Command shutters to finish exposure."""
-        if any(self.currently(state='integrating')):
+        if self.shuttersOpen:
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
+            return
+
+        # if we're not integrating, finishRamp as soon as possible.
+        if self.hxExposure and self.hxExposure.preparingForShutterOpen:
+            self.hxExposure.finishRampASAP(cmd)
 
     def exit(self):
         """Free up all resources."""
