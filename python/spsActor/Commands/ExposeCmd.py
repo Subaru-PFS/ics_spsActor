@@ -137,8 +137,9 @@ class ExposeCmd(object):
 
         try:
             fileIds = exp.waitForCompletion(cmd, visit=visit)
+            failures = exp.failures.format()
 
-            if any(exp.clearedExp):
+            if failures:
                 cmd.warn(fileIds)
                 cmd.fail(f'text="{exp.failures.format()}"')
             else:

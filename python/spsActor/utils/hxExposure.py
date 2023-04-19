@@ -95,11 +95,11 @@ class HxExposure(QThread):
 
     @property
     def isFinished(self):
-        return self.storable or self.rampVar or self.nRead0 == 0
+        return self.storable or self.cleared or self.nRead0 == 0
 
     @property
     def cleared(self):
-        return self.rampVar and (self.rampVar.didFail or self.clearASAP)
+        return self.rampVar is not None and (self.rampVar.didFail or self.clearASAP)
 
     @property
     def wiped(self):
