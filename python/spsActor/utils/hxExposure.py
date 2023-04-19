@@ -22,7 +22,6 @@ def getExposureInfo(filepath):
 
 class HxExposure(QThread):
     # timeout setting.
-    rampTime = 10.857
     """Placeholder to handle hxActor cmd threading."""
 
     def __init__(self, exp, cam):
@@ -41,12 +40,12 @@ class HxExposure(QThread):
                 nRead = 0
             elif exp.coreExpType == 'dark':
                 # signal = ramp[-1] - ramp[0] , since ramp[0] is only use to subtract, you need an extra-one.
-                nRead = round(exp.exptime / HxExposure.rampTime) + 1
+                nRead = round(exp.exptime / self.readTime) + 1
             else:
                 # signal = ramp[-1] - ramp[0], you need a clean ramp[0] that will be subtracted, and you need an extra
                 # after the shutter/lamp transition.
                 # In other words you always need to bracket your signal with clean/stable ramps.
-                nRead = (exp.exptime + exp.expTimeOverHead) // HxExposure.rampTime + 3
+                nRead = (exp.exptime + exp.expTimeOverHead) // self.readTime + 3
 
             return int(nRead)
 
@@ -70,6 +69,7 @@ class HxExposure(QThread):
         self.dateobs = 'None'
 
         self.state = 'none'
+        self.readTime = float(exp.actor.models[self.hx].keyVarDict['readTime'].getValue())
         # differentiating between the original number of read (nRead0) and current number of read(nRead).
         self.nRead = self.nRead0 = nRead(exp)
 
@@ -164,7 +164,7 @@ class HxExposure(QThread):
         # But not for darks, so it needs to be done here.
         if not self.time_exp_end:
             dateobs = pfsTime.convert.datetime_to_isoformat(pfsTime.convert.datetime_from_timestamp(self.wipedAt))
-            self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.nRead0 * HxExposure.rampTime)
+            self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.nRead0 * self.readTime)
 
         self.readVar = keyVar
 
@@ -184,7 +184,7 @@ class HxExposure(QThread):
         cmdStr = f'ramp nread={self.nRead0} visit={self.exp.visit} exptype={self.exptype} {expectedExptime}'.strip()
 
         self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr,
-                                            timeLim=(self.nRead0 + 2) * HxExposure.rampTime + 60)
+                                            timeLim=(self.nRead0 + 2) * self.readTime + 60)
 
         if self.rampVar.didFail:
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(self.rampVar))
