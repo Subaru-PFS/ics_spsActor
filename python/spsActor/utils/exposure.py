@@ -319,11 +319,13 @@ class Exposure(object):
 
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure."""
-        self.doAbort = True
-        self.failures.add(reason)
-
-        for thread in self.threads:
-            thread.abort(cmd)
+        # just call finish.
+        self.finish(cmd)
+        # self.doAbort = True
+        # self.failures.add(reason)
+        #
+        # for thread in self.threads:
+        #     thread.abort(cmd)
 
     def finish(self, cmd):
         """Finish current exposure."""
