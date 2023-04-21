@@ -65,8 +65,8 @@ class HxExposure(QThread):
 
         # be nice and initialize those variables
         self.time_exp_end = None
-        self.exptime = -9998.0
-        self.dateobs = 'None'
+        self.exptime = None
+        self.dateobs = None
 
         self.state = 'none'
         self.readTime = float(exp.actor.models[self.hx].keyVarDict['readTime'].getValue())
@@ -235,8 +235,11 @@ class HxExposure(QThread):
     @singleShot
     def _finishRamp(self, cmd, doStop):
         """Finish ramp, which will gather the final fits keys."""
+        exptime = f'exptime={self.exptime} ' if self.exptime else ''
+        dateobs = f'dateobs={self.dateobs} ' if self.dateobs else ''
         stopRamp = 'stopRamp' if doStop else ''
-        cmdStr = f'ramp finish exptime={self.exptime} obstime={self.dateobs} {stopRamp}'.strip()
+        # parsing arguments.
+        cmdStr = f'ramp finish {exptime}{dateobs}{stopRamp}'.strip()
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr, timeLim=60)
         self.actor.logger.info(f'{self.hx} ramp finish didFail({cmdVar.didFail})')
