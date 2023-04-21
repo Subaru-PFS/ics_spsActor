@@ -236,10 +236,10 @@ class HxExposure(QThread):
     def _finishRamp(self, cmd, doStop):
         """Finish ramp, which will gather the final fits keys."""
         exptime = f'exptime={self.exptime} ' if self.exptime else ''
-        dateobs = f'dateobs={self.dateobs} ' if self.dateobs else ''
+        obstime = f'obstime={self.dateobs} ' if self.dateobs else ''
         stopRamp = 'stopRamp' if doStop else ''
         # parsing arguments.
-        cmdStr = f'ramp finish {exptime}{dateobs}{stopRamp}'.strip()
+        cmdStr = f'ramp finish {exptime}{obstime}{stopRamp}'.strip()
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr, timeLim=60)
         self.actor.logger.info(f'{self.hx} ramp finish didFail({cmdVar.didFail})')
