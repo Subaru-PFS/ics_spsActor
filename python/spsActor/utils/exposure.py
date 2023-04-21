@@ -321,6 +321,7 @@ class Exposure(object):
         """ Abort current exposure."""
         # just call finish.
         self.finish(cmd)
+        self.failures.add(reason)  # still add reason.
         # self.doAbort = True
         # self.failures.add(reason)
         #
