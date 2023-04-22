@@ -113,8 +113,11 @@ class SpecModuleExposure(QThread):
                 continue
             camExp.wipe(cmd)
 
-        # if one fails, it cleared itself out.
-        while not all([detector.wiped for detector in self.runExp]):
+        # if not syncSpectrograph, each sm is independent.
+        threads = self.exp.runExp if self.exp.syncSpectrograph else self.exp.runExp
+
+        # # if one fails, it cleared itself out.
+        while not all([detector.wiped for detector in threads]):
             pfsTime.sleep.millisec()
 
         checkForEarlyFinish()
@@ -240,6 +243,7 @@ class Exposure(object):
 
         self.doAbort = False
         self.doFinish = False
+        self.syncSpectrograph = True
         self.actor = actor
         self.visit = visit
         self.exptype = exptype
@@ -262,16 +266,20 @@ class Exposure(object):
         return sum([th.camExp for th in self.smThreads], [])
 
     @property
+    def clearedExp(self):
+        return [camExp for camExp in self.camExp if camExp.cleared]
+
+    @property
+    def runExp(self):
+        return list(set(self.camExp) - set(self.clearedExp))
+
+    @property
     def isFinished(self):
         return all([th.isFinished for th in self.smThreads])
 
     @property
     def storable(self):
         return any([camExp.storable for camExp in self.camExp])
-
-    @property
-    def clearedExp(self):
-        return [camExp for camExp in self.camExp if camExp.cleared]
 
     @property
     def iisThreads(self):
