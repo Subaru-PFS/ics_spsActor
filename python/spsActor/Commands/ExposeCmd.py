@@ -171,7 +171,7 @@ class ExposeCmd(object):
             cmd.fail(f'text="visit:{visit} is not ongoing, valids:{",".join(map(str, self.exp.keys()))} "')
             return
 
-        exposure.abort(cmd)
+        exposure.finish(cmd)
         cmd.finish('text="aborting exposure now !"')
 
     def finish(self, cmd):

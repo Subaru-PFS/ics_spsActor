@@ -81,6 +81,11 @@ class SpecModuleExposure(QThread):
     def isFinished(self):
         return all(camExp.isFinished for camExp in self.camExp)
 
+    @property
+    def syncThreadsToOpen(self):
+        # if not syncSpectrograph, each sm is independent.
+        return self.exp.runExp if self.exp.syncSpectrograph else self.runExp
+
     def currently(self, state):
         """Current camExp states."""
         return [camExp.state == state for camExp in self.runExp]
@@ -113,11 +118,8 @@ class SpecModuleExposure(QThread):
                 continue
             camExp.wipe(cmd)
 
-        # if not syncSpectrograph, each sm is independent.
-        threads = self.exp.runExp if self.exp.syncSpectrograph else self.exp.runExp
-
         # # if one fails, it cleared itself out.
-        while not all([detector.wiped for detector in threads]):
+        while not all([detector.wiped for detector in self.syncThreadsToOpen]):
             pfsTime.sleep.millisec()
 
         checkForEarlyFinish()
@@ -328,13 +330,11 @@ class Exposure(object):
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure."""
         # just call finish.
-        self.finish(cmd)
-        self.failures.add(reason)  # still add reason.
-        # self.doAbort = True
-        # self.failures.add(reason)
-        #
-        # for thread in self.threads:
-        #     thread.abort(cmd)
+        self.doAbort = True
+        self.failures.add(reason)
+
+        for thread in self.threads:
+            thread.abort(cmd)
 
     def finish(self, cmd):
         """Finish current exposure."""
