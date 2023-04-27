@@ -24,7 +24,7 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
 
-        expArgs = '[<visit>] [<cam>] [<cams>] [@doTest] [@doScienceCheck]'
+        expArgs = '[<visit>] [<designId>] [<cam>] [<cams>] [@doTest] [@doScienceCheck]'
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -59,6 +59,7 @@ class ExposeCmd(object):
                                                  help='first row, total number of rows to read on blue arm'),
                                         keys.Key("redWindow", types.Int() * (1, 2),
                                                  help='first row, total number of rows to read on red arm'),
+                                        keys.Key('designId', types.Long(), help='selected pfsDesignId'),
                                         )
 
     def doExposure(self, cmd):
@@ -87,6 +88,7 @@ class ExposeCmd(object):
 
         exptime = cmdKeys['exptime'].values[0] if exptype != 'bias' else 0
         visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
+        designId = cmdKeys['designId'].values[0] if 'designId' in cmdKeys else None
 
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else None
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
@@ -114,7 +116,7 @@ class ExposeCmd(object):
         if doScienceCheck and not slitInHome(cams, cmd=cmd):
             return
 
-        self.process(cmd, visit,
+        self.process(cmd, visit, designId=designId,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps,
                      doLampsTiming=doLampsTiming, doIIS=doIIS, doTest=doTest,
                      blueWindow=blueWindow, redWindow=redWindow)

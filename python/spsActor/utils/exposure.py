@@ -235,8 +235,8 @@ class Exposure(object):
     SpecModuleExposureClass = SpecModuleExposure
     expTimeOverHead = 0.5
 
-    def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
-                 redWindow=False):
+    def __init__(self, actor, visit, exptype, exptime, cams, designId=None, doIIS=False, doTest=False,
+                 blueWindow=False, redWindow=False):
         # save the actual exptype first
         self.coreExpType = exptype
         # force exptype == test.
@@ -250,6 +250,7 @@ class Exposure(object):
         self.visit = visit
         self.exptype = exptype
         self.exptime = exptime
+        self.designId = designId
 
         # Define how ccds are wiped and read.
         self.wipeFlavour = dict(b='', r='')
