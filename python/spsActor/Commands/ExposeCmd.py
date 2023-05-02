@@ -104,13 +104,20 @@ class ExposeCmd(object):
         blueWindow = cmdKeys['blueWindow'].values if 'blueWindow' in cmdKeys else blueWindow
         redWindow = cmdKeys['redWindow'].values if 'redWindow' in cmdKeys else redWindow
 
+        nircam = [cam for cam in cams if cam.arm == 'n']
+
+        if len(nircam) and (blueWindow or redWindow):
+            cams = set(cams) - set(nircam)
+            cmd.warn('text="ignoring nir cameras for windowed exposure."')
+
         # science check boils down to checking slit position right now, but more to come.
         if doScienceCheck and not slitInHome(cams, cmd=cmd):
             return
 
         self.process(cmd, visit,
-                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, doLampsTiming=doLampsTiming,
-                     doIIS=doIIS, doTest=doTest, blueWindow=blueWindow, redWindow=redWindow)
+                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps,
+                     doLampsTiming=doLampsTiming, doIIS=doIIS, doTest=doTest,
+                     blueWindow=blueWindow, redWindow=redWindow)
 
     @singleShot
     def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
@@ -156,6 +163,12 @@ class ExposeCmd(object):
         cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else None
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
         cams = self.actor.spsConfig.identify(cams=cams)
+
+        nircam = [cam for cam in cams if cam.arm == 'n']
+
+        if len(nircam):
+            cams = set(cams) - set(nircam)
+            cmd.warn('text="ignoring nir cameras for erase."')
 
         syncCmd = sync.CcdErase(self.actor, cams=cams)
         syncCmd.process(cmd)
