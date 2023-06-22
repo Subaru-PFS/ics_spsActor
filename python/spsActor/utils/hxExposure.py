@@ -223,7 +223,7 @@ class HxExposure(QThread):
         if str(self.cam) == 'n1':
             return
 
-        while not self.reset:
+        while self.state != 'reset':
             pfsTime.sleep.millisec()
             # if the hx.ramp() fails you want to escape that loop.
             if self.cleared:
