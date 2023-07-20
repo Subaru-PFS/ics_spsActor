@@ -85,7 +85,8 @@ class LampsControl(QThread):
 
     def declareDone(self, cmd):
         """ Declare exposure is over.  """
-        self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=LampsControl.stopTimeLim)
+        pass
+        # self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=LampsControl.stopTimeLim)
 
     def finish(self, cmd):
         """ Just a prototype. """
