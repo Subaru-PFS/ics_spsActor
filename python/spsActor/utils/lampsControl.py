@@ -80,7 +80,7 @@ class LampsControl(QThread):
         """ Send stop command. """
         if self.aborted is None:
             self.aborted = False
-            self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
+            #self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
             self.aborted = True
 
     def declareDone(self, cmd):
