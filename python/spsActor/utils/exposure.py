@@ -245,7 +245,7 @@ class Exposure(object):
 
         self.doAbort = False
         self.doFinish = False
-        self.syncSpectrograph = True
+        self.syncSpectrograph = False
         self.actor = actor
         self.visit = visit
         self.exptype = exptype
