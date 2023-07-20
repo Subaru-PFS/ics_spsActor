@@ -45,13 +45,13 @@ class BiaSwitch(sync.SpsCmd):
         self.attachThreads([BiaCmd(self, specNum, cmdStr, BiaSwitch.timeLim) for specNum in specNums])
 
 
-class CcdMotorsMove(sync.SpsCmd):
+class FpaMove(sync.SpsCmd):
     timeLim = 30
 
     def __init__(self, spsActor, cams, cmdHead, **kwargs):
         sync.SpsCmd.__init__(self, spsActor)
         cmdStr = cmdUtils.parse(f'motors {cmdHead}', **kwargs)
-        self.attachThreads([CcdMotorsMoveCmd(self, cam, cmdStr, CcdMotorsMove.timeLim) for cam in cams])
+        self.attachThreads([FpaMoveCmd(self, cam, cmdStr, FpaMove.timeLim) for cam in cams])
 
 
 class CcdErase(sync.SpsCmd):
@@ -106,7 +106,7 @@ class BiaCmd(EnuThread):
     """"""
 
 
-class CcdMotorsMoveCmd(XcuThread):
+class FpaMoveCmd(XcuThread):
     """"""
 
 

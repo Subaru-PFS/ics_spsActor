@@ -10,8 +10,8 @@ def factory(className, *args, **kwargs):
         return SlitStopFailed(*args, **kwargs)
     elif className == "BiaCmd":
         return BiaFailed(*args, **kwargs)
-    elif className == "CcdMotorsMoveCmd":
-        return CcdMotorsFailed(*args, **kwargs)
+    elif className == "FpaMoveCmd":
+        return FpaMotorsFailed(*args, **kwargs)
     elif className == "CcdEraseCmd":
         return EraseFailed(*args, **kwargs)
 
@@ -66,7 +66,7 @@ class BiaFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
 
-class CcdMotorsFailed(SpsException):
+class FpaMotorsFailed(SpsException):
     """Exception raised when exposure is just trash and needs to be cleared ASAP."""
 
 

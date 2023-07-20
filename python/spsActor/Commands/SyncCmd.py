@@ -34,7 +34,8 @@ class SyncCmd(object):
             ('iis', '<off> [<cams>]', self.iisOff),
 
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
-            ('ccdMotors', 'toFocus [<cams>]', self.ccdMotorsToFocus),
+            ('fpa', 'toFocus [<cams>]', self.fpaToFocus),
+            ('fpa', 'moveFocus [<microns>] [@(abs)] [<cams>]', self.fpaMoveFocus),
         ]
 
         # Define typed command arguments for the above commands.
@@ -51,6 +52,8 @@ class SyncCmd(object):
                                         keys.Key("c", types.Float(),
                                                  help='the number of ticks/microns to move actuator C'),
                                         keys.Key("piston", types.Float(),
+                                                 help='the number of ticks/microns to move actuators A,B, and C'),
+                                        keys.Key("microns", types.Float(),
                                                  help='the number of ticks/microns to move actuators A,B, and C'),
                                         keys.Key("x", types.Float(),
                                                  help='dither in pixels wrt ccd x direction'),
@@ -202,20 +205,34 @@ class SyncCmd(object):
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
         cams = self.actor.spsConfig.identify(cams=cams)
 
-        syncCmd = sync.CcdMotorsMove(self.actor, cams=cams, cmdHead='move',
-                                     a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
+        syncCmd = sync.FpaMove(self.actor, cams=cams, cmdHead='move',
+                               a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
 
         syncCmd.process(cmd)
 
     @singleShot
-    def ccdMotorsToFocus(self, cmd):
+    def fpaToFocus(self, cmd):
         """Move multiple ccdMotors synchronously."""
         cmdKeys = cmd.cmd.keywords
 
         cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
         cams = self.actor.spsConfig.identify(cams=cams)
 
-        syncCmd = sync.CcdMotorsMove(self.actor, cams=cams, cmdHead='toFocus')
+        syncCmd = sync.FpaMove(self.actor, cams=cams, cmdHead='toFocus')
+        syncCmd.process(cmd)
+
+    @singleShot
+    def fpaMoveFocus(self, cmd):
+        """Move multiple ccdMotors synchronously."""
+        cmdKeys = cmd.cmd.keywords
+
+        microns = cmdKeys['microns'].values[0] if 'microns' in cmdKeys else None
+        abs = 'abs' in cmdKeys
+
+        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
+        cams = self.actor.spsConfig.identify(cams=cams)
+
+        syncCmd = sync.FpaMove(self.actor, cams=cams, microns=microns, abs=abs, cmdHead='moveFocus')
         syncCmd.process(cmd)
 
     @singleShot
