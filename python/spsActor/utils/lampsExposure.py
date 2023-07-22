@@ -46,6 +46,7 @@ class Exposure(exposure.Exposure):
 
     def __init__(self, *args, **kwargs):
         exposure.Exposure.__init__(self, *args, **kwargs)
+        self.syncSpectrograph = True
         [lightSource] = list(set(th.lightSource() for th in self.smThreads))
         self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
 
