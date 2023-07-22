@@ -236,7 +236,7 @@ class Exposure(object):
     expTimeOverHead = 0.5
 
     def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
-                 redWindow=False):
+                 redWindow=False, **kwargs):
         # save the actual exptype first
         self.coreExpType = exptype
         # force exptype == test.

@@ -6,6 +6,7 @@ import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 import spsActor.Commands.cmdList as sync
 from ics.utils.threading import singleShot
+from spsActor.utils import driftSlitExposure
 from spsActor.utils import exposure, lampsExposure
 
 reload(exposure)
@@ -31,7 +32,7 @@ class ExposeCmd(object):
 
         self.vocab = [
             ('expose', f'object <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
-            ('expose', f'flat <exptime> {expArgs} {lampsArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'flat <exptime> {expArgs} {lampsArgs} [@doIIS] [<slideSlit>] {windowingArgs}', self.doExposure),
             ('expose', f'arc <exptime> {expArgs} {lampsArgs} [@doIIS] {windowingArgs}', self.doExposure),
             ('expose', f'domeflat <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
             ('expose', f'dark <exptime> {expArgs} {windowingArgs}', self.doExposure),
@@ -59,6 +60,8 @@ class ExposeCmd(object):
                                                  help='first row, total number of rows to read on blue arm'),
                                         keys.Key("redWindow", types.Int() * (1, 2),
                                                  help='first row, total number of rows to read on red arm'),
+                                        keys.Key('slideSlit', types.Float() * (1, 2),
+                                                 help='pixels range(start, stop )')
                                         )
 
     def doExposure(self, cmd):
@@ -97,6 +100,8 @@ class ExposeCmd(object):
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
         doScienceCheck = 'doScienceCheck' in cmdKeys
+        doSlideSlit = 'slideSlit' in cmdKeys
+        slideSlitPixelRange = cmdKeys['slideSlit'].values if doSlideSlit else False
 
         if 'window' in cmdKeys:
             blueWindow = redWindow = cmdKeys['window'].values
@@ -116,11 +121,11 @@ class ExposeCmd(object):
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps,
-                     doLampsTiming=doLampsTiming, doIIS=doIIS, doTest=doTest,
-                     blueWindow=blueWindow, redWindow=redWindow)
+                     doLampsTiming=doLampsTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
+                     blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange)
 
     @singleShot
-    def process(self, cmd, visit, exptype, doLamps, doLampsTiming, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, doLampsTiming, doSlideSlit, **kwargs):
         """Process exposure in another thread """
 
         if visit in self.exp.keys():
@@ -132,7 +137,7 @@ class ExposeCmd(object):
 
         elif doLamps:
             if doLampsTiming:
-                cls = lampsExposure.Exposure
+                cls = driftSlitExposure.Exposure if doSlideSlit else lampsExposure.Exposure
             else:
                 cls = lampsExposure.ShutterExposure
 
