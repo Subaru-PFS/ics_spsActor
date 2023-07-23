@@ -40,6 +40,7 @@ class SpecModuleExposure(QThread):
 
         # add callback for shutters state, useful to fire process asynchronously.
         self.shuttersOpen = False
+        self.didExpose = False
         self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
         self.shuttersKeyVar.addCallback(self.shuttersState)
 
@@ -177,11 +178,17 @@ class SpecModuleExposure(QThread):
 
         didExpose = self.shuttersOpen and 'close' in state
 
+        if not self.didExpose:
+            self.didExpose = didExpose
+
         # should cover all cases.
         self.shuttersOpen = 'open' in state
 
         if self.shuttersOpen:
             self.shuttersOpenCB()
+
+        if didExpose:
+            self.shuttersCloseCB()
 
         # Declare final read, that will call finishRamp on the next hxRead callback.
         if didExpose and self.hxExposure:
@@ -189,9 +196,19 @@ class SpecModuleExposure(QThread):
 
     def shuttersOpenCB(self):
         """Callback called whenenever shutters are opened."""
+        # Generate pfiShutters keys for gen2.
+        if self.specConfig.lightSource == 'pfi':
+            self.exp.genShutterKeyForGen2('open')
+
         # fire IIS is required.
         if self.doControlIIS:
             self.iisControl.goSignal = True
+
+    def shuttersCloseCB(self):
+        """Callback called whenenever shutters are closed after the exposure."""
+        # Generate pfiShutters keys for gen2.
+        if self.specConfig.lightSource == 'pfi':
+            self.exp.genShutterKeyForGen2('close')
 
     def clearExposure(self, cmd):
         """Clear all running CcdExposure."""
@@ -246,6 +263,8 @@ class Exposure(object):
         self.doAbort = False
         self.doFinish = False
         self.syncSpectrograph = False
+        self.didGenShutterKeyForGen2 = dict(open=False, close=False)
+
         self.actor = actor
         self.visit = visit
         self.exptype = exptype
@@ -355,6 +374,18 @@ class Exposure(object):
 
         for thread in self.smThreads:
             thread.expose(cmd, visit)
+
+    def genShutterKeyForGen2(self, state):
+        """Generate a keyword for Gen2, declaring when any PFI-connected shutter becomes open,
+        and when all PFI-connected shutters become closed."""
+        doGenerate = not self.didGenShutterKeyForGen2[state]
+
+        if state == 'close' and not all([specModule.didExpose for specModule in self.smThreads]):
+            doGenerate = False
+
+        if doGenerate:
+            self.didGenShutterKeyForGen2[state] = True
+            self.cmd.inform(f'pfiShutters={state}')
 
     def exit(self):
         """Free up all resources."""
