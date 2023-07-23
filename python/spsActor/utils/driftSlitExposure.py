@@ -1,4 +1,4 @@
-from spsActor.utils import lampsExposure, slitControl
+from spsActor.utils import exposure, lampsExposure, slitControl
 
 
 class SpecModuleExposure(lampsExposure.SpecModuleExposure):
@@ -31,6 +31,8 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
     def shuttersOpenCB(self):
         """ Shutters state callback, send go signal whenever open. """
+        exposure.SpecModuleExposure.shuttersOpenCB(self)
+
         # send go slit signal.
         if not self.slitSliding:
             self.exp.sendGoSlitSignal()
