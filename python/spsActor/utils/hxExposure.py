@@ -195,7 +195,9 @@ class HxExposure(QThread):
         try:
             self._ramp(cmd, expectedExptime=expectedExptime)
         except exception.HxRampFailed as e:
-            self.exp.abort(cmd, reason=str(e))
+            failure = f"HxRampFailed{self.hx} with {cmdUtils.interpretFailure(self.rampVar)})"
+            cmd.warn(f'text="{failure}"')
+            # self.exp.abort(cmd, reason=str(e))
 
     @threaded
     def expose(self, cmd, visit):
@@ -235,6 +237,9 @@ class HxExposure(QThread):
     @singleShot
     def _finishRamp(self, cmd, doStop):
         """Finish ramp, which will gather the final fits keys."""
+        if self.rampVar and self.rampVar.didFail:
+            return
+
         exptime = f'exptime={self.exptime} ' if self.exptime else ''
         obstime = f'obstime={self.dateobs} ' if self.dateobs else ''
         stopRamp = 'stopRamp' if doStop else ''
