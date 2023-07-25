@@ -6,7 +6,7 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
     def __init__(self, *args, **kwargs):
         lampsExposure.SpecModuleExposure.__init__(self, *args, **kwargs)
-        self.slitStateKeyVar = self.exp.actor.models[self.enuName].keyVarDict['slitFSM']
+        self.slitStateKeyVar = self.exp.actor.models[self.enuName].keyVarDict['slitAtSpeed']
         self.slitStateKeyVar.addCallback(self.slitState)
         self.slitSliding = False
 
@@ -14,12 +14,12 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
     def slitState(self, keyVar):
         """Slit state callback, call shuttersOpenCB() whenever open."""
-        state, substate = keyVar.getValue(doRaise=False)
+        atSpeed = bool(keyVar.getValue(doRaise=False))
 
         # track slit state.
-        self.actor.bcast.debug(f'text="{self.specName} slit {state, substate}"')
+        self.actor.bcast.debug(f'text="{self.specName} slitAtSpeed={atSpeed}"')
 
-        self.slitSliding = substate == 'SLIDING'
+        self.slitSliding = atSpeed
 
         if self.slitSliding:
             self.slitSlidingCB()
@@ -46,7 +46,8 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
 class Exposure(lampsExposure.Exposure):
     SpecModuleExposureClass = SpecModuleExposure
-    expTimeOverHead = 3
+    expTimeOverHead = 5
+    shutterOverHead = 15
 
     def __init__(self, *args, slideSlitPixelRange, **kwargs):
         self.pixelRange = slideSlitPixelRange
