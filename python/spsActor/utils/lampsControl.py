@@ -57,7 +57,9 @@ class LampsControl(QThread):
             # Wait for the go signal, namely when all shutters are opened.
             self.waitForGoSignal()
             # Ask lamp controller to pulse lamps with the configured timing.
-            self._go(cmd)
+            #self._go(cmd)
+            time.sleep(self.exp.exptime)
+            self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='stop',  timeLim=10)
             # Lamp(s) have been pulsed, exposure can now finish immediately.
             self.exp.finish(cmd)
 
