@@ -46,7 +46,7 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
 class Exposure(lampsExposure.Exposure):
     SpecModuleExposureClass = SpecModuleExposure
-    expTimeOverHead = 5
+    expTimeOverHead = 10
     shutterOverHead = 15
 
     def __init__(self, *args, slideSlitPixelRange, **kwargs):

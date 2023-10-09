@@ -7,7 +7,7 @@ from ics.utils.threading import threaded
 
 class SlitControl(QThread):
     """ Placeholder to handle slit cmd threading. """
-    timeMargin = 15
+    timeMargin = 20
     abortTimeLim = 15
     abortCmd = 'slit abort'
 
