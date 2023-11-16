@@ -32,7 +32,7 @@ class SyncCmd(object):
 
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
-            ('iis', 'prepare [<hgar>] [<hgcd>] [<argon>] [<neon>] [<krypton>] [<xenon>] [<cams>]', self.iisPrepare),
+            ('iis', 'prepare [<hgar>] [<halogen>] [<argon>] [<neon>] [<krypton>] [<xenon>] [<cams>]', self.iisPrepare),
 
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('fpa', 'toFocus [<cams>]', self.fpaToFocus),
@@ -74,7 +74,6 @@ class SyncCmd(object):
                                         keys.Key('hgar', types.Float(), help='HgAr lamp on time'),
                                         keys.Key('neon', types.Float(), help='Ne lamp on time'),
                                         keys.Key('krypton', types.Float(), help='Kr lamp on time'),
-                                        keys.Key('hgcd', types.Float(), help='HgCd lamp on time'),
                                         keys.Key('xenon', types.Float(), help='Xenon lamp on time'),
 
                                         )
