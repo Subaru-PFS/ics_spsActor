@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-
+import ics.utils.sps.lamps.utils.lampState as lampState
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 import spsActor.Commands.cmdList as sync
@@ -32,6 +32,7 @@ class SyncCmd(object):
 
             ('iis', '[<on>] [<warmingTime>] [<cams>]', self.iisOn),
             ('iis', '<off> [<cams>]', self.iisOff),
+            ('iis', 'prepare [<hgar>] [<hgcd>] [<argon>] [<neon>] [<krypton>] [<xenon>] [<cams>]', self.iisPrepare),
 
             ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
             ('fpa', 'toFocus [<cams>]', self.fpaToFocus),
@@ -67,6 +68,15 @@ class SyncCmd(object):
                                         keys.Key('period', types.Int(), help='bia period'),
                                         keys.Key("power", types.Float(), help='power level to set (0..100)'),
                                         keys.Key("duty", types.Int(), help='strobe duty cycle (0..100)'),
+
+                                        keys.Key('halogen', types.Float(), help='quartz halogen lamp on time'),
+                                        keys.Key('argon', types.Float(), help='Ar lamp on time'),
+                                        keys.Key('hgar', types.Float(), help='HgAr lamp on time'),
+                                        keys.Key('neon', types.Float(), help='Ne lamp on time'),
+                                        keys.Key('krypton', types.Float(), help='Kr lamp on time'),
+                                        keys.Key('hgcd', types.Float(), help='HgCd lamp on time'),
+                                        keys.Key('xenon', types.Float(), help='Xenon lamp on time'),
+
                                         )
 
     @property
@@ -248,5 +258,18 @@ class SyncCmd(object):
         """Turn multiple iis off synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.findSpecNums(cmdKeys)
+
+        cmd.finish()
+
+    @singleShot
+    def iisPrepare(self, cmd):
+        """Turn multiple iis off synchronously."""
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.findSpecNums(cmdKeys)
+
+        lampKeys = {name: int(round(cmdKeys[name].values[0])) for name in lampState.allLamps if name in cmdKeys}
+
+        syncCmd = sync.IisPrepare(self.actor, specNums=specNums, **lampKeys)
+        syncCmd.process(cmd)
 
         cmd.finish()

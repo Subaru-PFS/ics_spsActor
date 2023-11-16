@@ -45,6 +45,15 @@ class BiaSwitch(sync.SpsCmd):
         self.attachThreads([BiaCmd(self, specNum, cmdStr, BiaSwitch.timeLim) for specNum in specNums])
 
 
+class IisPrepare(sync.SpsCmd):
+    timeLim = 10
+
+    def __init__(self, spsActor, specNums, **kwargs):
+        sync.SpsCmd.__init__(self, spsActor)
+        cmdStr = cmdUtils.parse(f'iis prepare', **kwargs)
+        self.attachThreads([BiaCmd(self, specNum, cmdStr, IisPrepare.timeLim) for specNum in specNums])
+
+
 class FpaMove(sync.SpsCmd):
     timeLim = 30
 
