@@ -9,9 +9,6 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
     def __init__(self, *args, **kwargs):
         exposure.SpecModuleExposure.__init__(self, *args, **kwargs)
 
-    def lightSource(self):
-        return self.exp.actor.spsConfig[self.specName].lightSource
-
     def integrate(self, cmd):
         """ Command shutters to expose with given overhead. """
         # Block until the lampThread gives its ready signal.
@@ -31,6 +28,17 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         # send go signal.
         self.exp.sendGoLampsSignal()
 
+    def illuminated(self):
+        """Check if science fibers are illuminated."""
+        # consider illuminated by default.
+        illuminated = True
+
+        if self.lightSource.useDcbActor:
+            lampKeyVarDict = self.actor.models[self.lightSource.lampsActor].keyVarDict
+            return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, lampKeyVarDict)
+
+        return illuminated
+
 
 class Exposure(exposure.Exposure):
     """ Lamp controlled exposure time  """
@@ -47,7 +55,7 @@ class Exposure(exposure.Exposure):
     def __init__(self, *args, **kwargs):
         exposure.Exposure.__init__(self, *args, **kwargs)
         self.syncSpectrograph = True
-        [lightSource] = list(set(th.lightSource() for th in self.smThreads))
+        [lightSource] = list(set(th.lightSource for th in self.smThreads))
         self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
 
     @property
