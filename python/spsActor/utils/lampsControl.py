@@ -4,6 +4,7 @@ import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
+from ics.utils.sps.lamps.utils.lampState import allLamps
 from ics.utils.threading import threaded
 
 
@@ -28,6 +29,42 @@ class LampsControl(QThread):
     @property
     def isReady(self):
         return self.cmdVar is not None
+
+    @staticmethod
+    def lampState(keyVar, shutterOpenTime, shutterCloseTime):
+        # retrieve keyword value.
+        state, offTime, onTime = keyVar.getValue()
+        # converting iso-formatted date to timestamp.
+        offTime = pfsTime.Time.fromisoformat(offTime).timestamp()
+        onTime = pfsTime.Time.fromisoformat(onTime).timestamp()
+        shutterOpenTime = pfsTime.Time.fromisoformat(shutterOpenTime).timestamp()
+        shutterCloseTime = pfsTime.Time.fromisoformat(shutterCloseTime).timestamp()
+
+        # applying crude logic see INSTRM-1052 .
+        offTime = shutterCloseTime if offTime < onTime else offTime
+        start = min(max(onTime, shutterOpenTime), shutterCloseTime)
+        end = max(min(offTime, shutterCloseTime), shutterOpenTime)
+        lampExptime = end - start
+
+        return lampExptime > 0
+
+    @staticmethod
+    def checkIllumination(visit, enuKeyVarDict, lampKeyVarDict):
+        """"""
+        lastVisit, startedAt, openAt, endedAt, closedAt = enuKeyVarDict['shutterTimings'].getValue()
+
+        if lastVisit != visit:
+            return False
+
+        illuminated = []
+        # checking all possible lamps.
+        for lamp in allLamps:
+            try:
+                illuminated.append(LampsControl.lampState(lampKeyVarDict[lamp], openAt, closedAt))
+            except (KeyError, ValueError):
+                continue
+
+        return any(illuminated)
 
     def _waitForReadySignal(self, cmd):
         """ Wait for ready signal from lampActor(pfilamps, dcb..).  """
@@ -80,7 +117,7 @@ class LampsControl(QThread):
         """ Send stop command. """
         if self.aborted is None:
             self.aborted = False
-            #self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
+            # self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
             self.aborted = True
 
     def declareDone(self, cmd):
@@ -95,31 +132,6 @@ class LampsControl(QThread):
     def handleTimeout(self):
         """ Just a prototype. """
         pass
-
-
-class IISControl(LampsControl):
-    """ Placeholder to handle IIS cmd threading. """
-    # IIS command syntax is a bit different.
-    goCmd = 'iis go'
-    abortCmd = 'iis abort'
-
-    def __init__(self, exp, enuName):
-        LampsControl.__init__(self, exp, enuName, threadName=f'iisControl_{enuName}')
-
-    @threaded
-    def start(self, cmd):
-        """ Full lamp control routine.  """
-        try:
-            # dont wait for ready signal, at least for now.
-            # self.cmdVar = self._waitForReadySignal(cmd)
-            # Wait for the go signal, namely when all shutters are opened.
-            self.waitForGoSignal()
-            # Ask lamp controller to pulse lamps with the configured timing.
-            self._go(cmd)
-
-        except Exception as e:
-            self.abort(cmd)
-            self.exp.abort(cmd, reason=str(e))
 
 
 class ShutterControlled(LampsControl):

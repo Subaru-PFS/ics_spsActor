@@ -1,3 +1,6 @@
+import glob
+import os
+
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
@@ -5,10 +8,13 @@ from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
+from pfs.datamodel.pfsConfig import PfsConfig, TargetType, FiberStatus
 from spsActor.utils import ccdExposure
 from spsActor.utils import hxExposure
+from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
 from spsActor.utils.ids import SpsIds as idsUtils
+from twisted.internet import reactor
 
 
 def factory(exp, cam):
@@ -32,6 +38,7 @@ class SpecModuleExposure(QThread):
 
         self.cams = cams
         self.enuName = f'enu_{self.specName}'
+        self.enuKeyVarDict = self.exp.actor.models[self.enuName].keyVarDict
 
         QThread.__init__(self, exp.actor, self.specName)
 
@@ -41,12 +48,12 @@ class SpecModuleExposure(QThread):
         # add callback for shutters state, useful to fire process asynchronously.
         self.shuttersOpen = False
         self.didExpose = False
-        self.shuttersKeyVar = self.exp.actor.models[self.enuName].keyVarDict['shutters']
-        self.shuttersKeyVar.addCallback(self.shuttersState)
+
+        self.enuKeyVarDict['shutters'].addCallback(self.shuttersState)
 
         # instantiate IIS control if required.
         if self.doControlIIS:
-            self.iisControl = lampsControl.IISControl(self.exp, self.enuName)
+            self.iisControl = iisControl.IISControl(self.exp, self.enuName)
         else:
             self.iisControl = None
 
@@ -55,6 +62,14 @@ class SpecModuleExposure(QThread):
     @property
     def specName(self):
         return self.specConfig.specName
+
+    @property
+    def specNum(self):
+        return self.specConfig.specNum
+
+    @property
+    def lightSource(self):
+        return self.specConfig.lightSource
 
     @property
     def arms(self):
@@ -196,9 +211,7 @@ class SpecModuleExposure(QThread):
 
     def shuttersOpenCB(self):
         """Callback called whenenever shutters are opened."""
-        # Generate pfiShutters keys for gen2.
-        if self.specConfig.lightSource == 'pfi':
-            self.exp.genShutterKeyForGen2('open')
+        self.exp.genShutterKey('open', lightSource=self.specConfig.lightSource)
 
         # fire IIS is required.
         if self.doControlIIS:
@@ -206,9 +219,26 @@ class SpecModuleExposure(QThread):
 
     def shuttersCloseCB(self):
         """Callback called whenenever shutters are closed after the exposure."""
-        # Generate pfiShutters keys for gen2.
-        if self.specConfig.lightSource == 'pfi':
-            self.exp.genShutterKeyForGen2('close')
+        self.exp.genShutterKey('close', lightSource=self.specConfig.lightSource)
+
+    def iisIlluminated(self):
+        """Check if iis was illuminated during that visit."""
+        # enuKeyVarDict and lampKeyVarDict are the same for IIS.
+        return iisControl.IISControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, self.enuKeyVarDict)
+
+    def illuminated(self):
+        """Check if science fibers are illuminated."""
+        # consider illuminated by default.
+        illuminated = True
+
+        if self.exp.exptype in ['arc', 'flat']:
+            if self.lightSource.useDcbActor:
+                lampKeyVarDict = self.actor.models[self.lightSource.lampsActor].keyVarDict
+                return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, lampKeyVarDict)
+            elif self.lightSource == 'pfi':
+                illuminated = False
+
+        return illuminated
 
     def clearExposure(self, cmd):
         """Clear all running CcdExposure."""
@@ -238,7 +268,7 @@ class SpecModuleExposure(QThread):
     def exit(self):
         """Free up all resources."""
         # remove shutters callback.
-        self.shuttersKeyVar.removeCallback(self.shuttersState)
+        self.enuKeyVarDict['shutters'].removeCallback(self.shuttersState)
 
         for camExp in self.camExp:
             camExp.exit()
@@ -263,7 +293,7 @@ class Exposure(object):
         self.doAbort = False
         self.doFinish = False
         self.syncSpectrograph = False
-        self.didGenShutterKeyForGen2 = dict(open=False, close=False)
+        self.didGenShutterKey = dict(open=False, close=False)
 
         self.actor = actor
         self.visit = visit
@@ -313,6 +343,10 @@ class Exposure(object):
     @property
     def threads(self):
         return self.smThreads + self.lampsThreads
+
+    @property
+    def doUpdatePfsConfigFiberStatus(self):
+        return self.actor.actorConfig['doUpdatePfsConfigFiberStatus']
 
     def defineCCDControl(self, blueWindow, redWindow):
         """Update CCD wipe and read flavours based on windowing."""
@@ -375,17 +409,70 @@ class Exposure(object):
         for thread in self.smThreads:
             thread.expose(cmd, visit)
 
-    def genShutterKeyForGen2(self, state):
+    def genShutterKey(self, state, lightSource):
         """Generate a keyword for Gen2, declaring when any PFI-connected shutter becomes open,
         and when all PFI-connected shutters become closed."""
-        doGenerate = not self.didGenShutterKeyForGen2[state]
+        doGenerate = not self.didGenShutterKey[state]
 
         if state == 'close' and not all([specModule.didExpose for specModule in self.smThreads]):
             doGenerate = False
 
         if doGenerate:
-            self.didGenShutterKeyForGen2[state] = True
-            self.cmd.inform(f'pfiShutters={state}')
+            self.didGenShutterKey[state] = True
+
+            if lightSource == 'pfi':
+                self.cmd.inform(f'pfiShutters={state}')
+
+            # Finalize pfsConfig for engineering fibers illumination.
+            if state == 'close':
+                if self.doUpdatePfsConfigFiberStatus:
+                    reactor.callLater(1, self.updatePfsConfigFiberStatus)
+
+    def updatePfsConfigFiberStatus(self):
+        """Update pfsConfig fiberStatus."""
+
+        def findPfsConfig(visit):
+            lastDate = max(glob.glob(os.path.join('/data/raw', '*/')), key=os.path.getmtime)
+            dirName = os.path.join(lastDate, 'pfsConfig')
+            [pfsConfigPath] = glob.glob(os.path.join(dirName, 'pfsConfig-*-%06d.fits' % visit))
+            return pfsConfigPath
+
+        def overWritePfsConfig(pfsConfig, fileName):
+            os.chmod(fileName, 0o644)
+            pfsConfig.write(fileName=fileName)
+            self.actor.logger.info(f'{fileName} updated successfully !')
+            os.chmod(fileName, 0o444)
+
+        fileName = findPfsConfig(self.visit)
+        pfsConfig = PfsConfig._readImpl(fileName)
+
+        for specNum in range(1, 5):
+            specModule = [thread for thread in self.smThreads if thread.specNum == specNum]
+
+            # no data associated with this spectrograph module.
+            if not specModule:
+                pfsConfig.fiberStatus[pfsConfig.spectrograph == specNum] = FiberStatus.UNILLUMINATED
+                continue
+
+            [specModule] = specModule
+
+            engFibers = ((pfsConfig.targetType == TargetType.ENGINEERING) *
+                         (pfsConfig.spectrograph == specModule.specNum) *
+                         (pfsConfig.fiberStatus == FiberStatus.GOOD))
+
+            scienceFibers = ((pfsConfig.targetType != TargetType.ENGINEERING) *
+                             (pfsConfig.spectrograph == specModule.specNum) *
+                             (pfsConfig.fiberStatus == FiberStatus.GOOD))
+
+            # checking engineering fibers illumination.
+            if not specModule.iisIlluminated():
+                pfsConfig.fiberStatus[engFibers] = FiberStatus.UNILLUMINATED
+
+            # checking science fibers illumination.
+            if not specModule.illuminated():
+                pfsConfig.fiberStatus[scienceFibers] = FiberStatus.UNILLUMINATED
+
+        overWritePfsConfig(pfsConfig, fileName)
 
     def exit(self):
         """Free up all resources."""

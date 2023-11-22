@@ -70,7 +70,11 @@ class SpsActor(actorcore.ICC.ICC):
         for specModule in spsConfig.values():
             cmd.inform(specModule.genSpecParts)
             cmd.inform(specModule.genLightSource)
-            self.requireModels([specModule.enuName] + [cam.actorName for cam in specModule.getCams(filter='operational')], cmd)
+            actors = [specModule.enuName] + [cam.actorName for cam in specModule.getCams(filter='operational')]
+            if specModule.lightSource.lampsActor:
+                actors.append(specModule.lightSource.lampsActor)
+
+            self.requireModels(actors, cmd)
 
         cmd.inform(f"""specModules={','.join(spsConfig.keys())}""")
         cmd.inform(f"""spsModules={','.join(spsConfig.spsModules.keys())}""")
