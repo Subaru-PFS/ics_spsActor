@@ -45,13 +45,32 @@ class BiaSwitch(sync.SpsCmd):
         self.attachThreads([BiaCmd(self, specNum, cmdStr, BiaSwitch.timeLim) for specNum in specNums])
 
 
+class IisOn(sync.SpsCmd):
+    timeLim = 90
+
+    def __init__(self, spsActor, specNums, warmingTime=False, **kwargs):
+        sync.SpsCmd.__init__(self, spsActor)
+        timeLim = warmingTime + 30 if warmingTime else IisOn.timeLim
+        cmdStr = cmdUtils.parse(f'iis', warmingTime=warmingTime, **kwargs)
+        self.attachThreads([IisCmd(self, specNum, cmdStr, timeLim) for specNum in specNums])
+
+
+class IisOff(sync.SpsCmd):
+    timeLim = 10
+
+    def __init__(self, spsActor, specNums, **kwargs):
+        sync.SpsCmd.__init__(self, spsActor)
+        cmdStr = cmdUtils.parse(f'iis', **kwargs)
+        self.attachThreads([IisCmd(self, specNum, cmdStr, IisOff.timeLim) for specNum in specNums])
+
+
 class IisPrepare(sync.SpsCmd):
     timeLim = 10
 
     def __init__(self, spsActor, specNums, **kwargs):
         sync.SpsCmd.__init__(self, spsActor)
-        cmdStr = cmdUtils.parse(f'iis prepare', **kwargs)
-        self.attachThreads([BiaCmd(self, specNum, cmdStr, IisPrepare.timeLim) for specNum in specNums])
+        cmdStr = cmdUtils.parse(f'iis', **kwargs)
+        self.attachThreads([IisCmd(self, specNum, cmdStr, IisPrepare.timeLim) for specNum in specNums])
 
 
 class FpaMove(sync.SpsCmd):
@@ -112,6 +131,10 @@ class SlitStopCmd(EnuThread):
 
 
 class BiaCmd(EnuThread):
+    """"""
+
+
+class IisCmd(EnuThread):
     """"""
 
 
