@@ -232,11 +232,14 @@ class SpecModuleExposure(QThread):
         illuminated = True
 
         if self.exp.exptype in ['arc', 'flat']:
+            # DCB model can be trusted I think.
             if self.lightSource.useDcbActor:
                 lampKeyVarDict = self.actor.models[self.lightSource.lampsActor].keyVarDict
                 return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, lampKeyVarDict)
             elif self.lightSource == 'pfi':
-                illuminated = False
+                # illuminated = False // this caused some confusion in december 2023 run (hgcd...)
+                #  I think considering illuminated = True for pfi is the right answer.
+                pass
 
         return illuminated
 
@@ -345,8 +348,12 @@ class Exposure(object):
         return self.smThreads + self.lampsThreads
 
     @property
-    def doUpdatePfsConfigFiberStatus(self):
-        return self.actor.actorConfig['doUpdatePfsConfigFiberStatus']
+    def doUpdateEngineeringFiberStatus(self):
+        return self.actor.actorConfig['doUpdateEngineeringFiberStatus']
+
+    @property
+    def doUpdateScienceFiberStatus(self):
+        return self.actor.actorConfig['doUpdateScienceFiberStatus']
 
     def defineCCDControl(self, blueWindow, redWindow):
         """Update CCD wipe and read flavours based on windowing."""
@@ -423,10 +430,9 @@ class Exposure(object):
             if lightSource == 'pfi':
                 self.cmd.inform(f'pfiShutters={state}')
 
-            # Finalize pfsConfig for engineering fibers illumination.
+            # Finalize pfsConfig fiberStatus with respect to fibers illumination.
             if state == 'close':
-                if self.doUpdatePfsConfigFiberStatus:
-                    reactor.callLater(1, self.updatePfsConfigFiberStatus)
+                reactor.callLater(1, self.updatePfsConfigFiberStatus)
 
     def updatePfsConfigFiberStatus(self):
         """Update pfsConfig fiberStatus."""
@@ -443,6 +449,7 @@ class Exposure(object):
             self.actor.logger.info(f'{fileName} updated successfully !')
             os.chmod(fileName, 0o444)
 
+        doOverWritePfsConfig = False
         fileName = findPfsConfig(self.visit)
         pfsConfig = PfsConfig._readImpl(fileName)
 
@@ -465,14 +472,19 @@ class Exposure(object):
                              (pfsConfig.fiberStatus == FiberStatus.GOOD))
 
             # checking engineering fibers illumination.
-            if not specModule.iisIlluminated():
+            if not specModule.iisIlluminated() and self.doUpdateEngineeringFiberStatus:
                 pfsConfig.fiberStatus[engFibers] = FiberStatus.UNILLUMINATED
+                self.actor.logger.info('Engineering fiberStatus are set to UNILLUMINATED.')
+                doOverWritePfsConfig = True
 
             # checking science fibers illumination.
-            if not specModule.illuminated():
+            if not specModule.illuminated() and self.doUpdateScienceFiberStatus:
                 pfsConfig.fiberStatus[scienceFibers] = FiberStatus.UNILLUMINATED
+                self.actor.logger.info('Science fiberStatus are set to UNILLUMINATED.')
+                doOverWritePfsConfig = True
 
-        overWritePfsConfig(pfsConfig, fileName)
+        if doOverWritePfsConfig:
+            overWritePfsConfig(pfsConfig, fileName)
 
     def exit(self):
         """Free up all resources."""
