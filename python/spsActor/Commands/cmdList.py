@@ -69,7 +69,7 @@ class IisPrepare(sync.SpsCmd):
 
     def __init__(self, spsActor, specNums, **kwargs):
         sync.SpsCmd.__init__(self, spsActor)
-        cmdStr = cmdUtils.parse(f'iis', **kwargs)
+        cmdStr = cmdUtils.parse(f'iis prepare', **kwargs)
         self.attachThreads([IisCmd(self, specNum, cmdStr, IisPrepare.timeLim) for specNum in specNums])
 
 
