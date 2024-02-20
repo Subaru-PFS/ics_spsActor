@@ -253,8 +253,6 @@ class SyncCmd(object):
         syncCmd = sync.IisOn(self.actor, specNums=specNums, on=on, warmingTime=warmingTime)
         syncCmd.process(cmd)
 
-        cmd.finish()
-
     @singleShot
     def iisOff(self, cmd):
         """Turn multiple iis off synchronously."""
@@ -266,8 +264,6 @@ class SyncCmd(object):
         syncCmd = sync.IisOff(self.actor, specNums=specNums, off=off)
         syncCmd.process(cmd)
 
-        cmd.finish()
-
     @singleShot
     def iisPrepare(self, cmd):
         """Turn multiple iis off synchronously."""
@@ -278,5 +274,3 @@ class SyncCmd(object):
 
         syncCmd = sync.IisPrepare(self.actor, specNums=specNums, **lampKeys)
         syncCmd.process(cmd)
-
-        cmd.finish()
