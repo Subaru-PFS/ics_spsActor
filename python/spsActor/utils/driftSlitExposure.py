@@ -49,9 +49,9 @@ class Exposure(lampsExposure.Exposure):
     expTimeOverHead = 10
     shutterOverHead = 15
 
-    def __init__(self, *args, slideSlitPixelRange, **kwargs):
+    def __init__(self, *args, slideSlitPixelRange, doLamps=True, **kwargs):
         self.pixelRange = slideSlitPixelRange
-        lampsExposure.Exposure.__init__(self, *args, **kwargs)
+        lampsExposure.Exposure.__init__(self, *args, doLamps=doLamps, **kwargs)
 
     @property
     def slitThreads(self):
@@ -72,14 +72,11 @@ class Exposure(lampsExposure.Exposure):
     def sendGoSlitSignal(self):
         """ Wait for all shutters to be opened to send go signal. """
         if all([thread.shuttersOpen for thread in self.smThreads]):
-            self.sendAllGoSlitSignal()
-
-    def sendAllGoSlitSignal(self):
-        """"""
-        for thread in self.smThreads:
-            thread.slitControl.goSignal = True
+            # all slits go !
+            for thread in self.smThreads:
+                thread.slitControl.goSignal = True
 
     def sendGoLampsSignal(self):
         """ Wait for all shutters to be opened to send go signal. """
         if all([thread.slitSliding for thread in self.smThreads]):
-            self.lampsThread.goSignal = True
+            lampsExposure.Exposure.sendGoLampsSignal(self)

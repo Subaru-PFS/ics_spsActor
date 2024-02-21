@@ -8,7 +8,7 @@ import spsActor.Commands.cmdList as sync
 from ics.utils.threading import singleShot
 from spsActor.utils import driftSlitExposure
 from spsActor.utils import exposure, lampsExposure
-
+from functools import partial
 reload(exposure)
 reload(sync)
 
@@ -96,7 +96,7 @@ class ExposeCmd(object):
         cams = self.actor.spsConfig.identify(cams=cams)
 
         doLamps = 'doLamps' in cmdKeys
-        doLampsTiming = 'doShutterTiming' not in cmdKeys
+        doShutterTiming = 'doShutterTiming'  in cmdKeys
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
         doScienceCheck = 'doScienceCheck' in cmdKeys
@@ -121,11 +121,11 @@ class ExposeCmd(object):
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps,
-                     doLampsTiming=doLampsTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
+                     doShutterTiming=doShutterTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
                      blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange)
 
     @singleShot
-    def process(self, cmd, visit, exptype, doLamps, doLampsTiming, doSlideSlit, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, doShutterTiming, doSlideSlit, doIIS, **kwargs):
         """Process exposure in another thread """
 
         if visit in self.exp.keys():
@@ -134,17 +134,19 @@ class ExposeCmd(object):
 
         if exptype in ['bias', 'dark']:
             cls = exposure.DarkExposure
-
-        elif doLamps:
-            if doLampsTiming:
-                cls = driftSlitExposure.Exposure if doSlideSlit else lampsExposure.Exposure
+        elif doSlideSlit:
+            if doLamps or doIIS:
+                cls = partial(driftSlitExposure.Exposure, doLamps=doLamps)
             else:
-                cls = lampsExposure.ShutterExposure
-
+                cls = driftSlitExposure.ShutterExposure
+        elif doLamps:
+            cls = lampsExposure.Exposure
+        elif doShutterTiming:
+            cls = lampsExposure.ShutterExposure
         else:
             cls = exposure.Exposure
 
-        exp = cls(self.actor, visit, exptype=exptype, **kwargs)
+        exp = cls(self.actor, visit, exptype=exptype, doIIS=doIIS, **kwargs)
         self.exp[visit] = exp
 
         try:
