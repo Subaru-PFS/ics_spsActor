@@ -164,3 +164,38 @@ class ShutterControlled(LampsControl):
         time.sleep(ShutterControlled.waitBeforeOpening)
 
         return cmdVar
+
+
+class NoLamps(QThread):
+    def __init__(self, exp, threadName='noLampsControl'):
+        self.exp = exp
+        self.isReady = True
+        self.lampsActor = 'noLamps'
+
+        QThread.__init__(self, exp.actor, threadName)
+        QThread.start(self)
+
+    @threaded
+    def start(self, cmd):
+        """ Full lamp control routine.  """
+        pass
+
+    def waitForGoSignal(self):
+        """ Wait for go signal from the shutters.  """
+        pass
+
+    def abort(self, cmd):
+        """ Send stop command. """
+        pass
+
+    def declareDone(self, cmd):
+        """ Declare exposure is over.  """
+        pass
+
+    def finish(self, cmd):
+        """ Just a prototype. """
+        pass
+
+    def handleTimeout(self):
+        """ Just a prototype. """
+        pass

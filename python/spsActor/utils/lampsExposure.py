@@ -52,11 +52,16 @@ class Exposure(exposure.Exposure):
     SpecModuleExposureClass = SpecModuleExposure
     LampControlClass = lampsControl.LampsControl
 
-    def __init__(self, *args, **kwargs):
-        exposure.Exposure.__init__(self, *args, **kwargs)
+    def __init__(self, *args, doLamps=True, **kwargs):
+        exposure.Exposure.__init__(self, *args,  **kwargs)
+        self.doIIS = False
         self.syncSpectrograph = True
         [lightSource] = list(set(th.lightSource for th in self.smThreads))
-        self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
+        # always True, convenience added just for the IIS drift flats.
+        if doLamps:
+            self.lampsThread = self.LampControlClass(self, lampsActor=lightSource.lampsActor)
+        else:
+            self.lampsThread = lampsControl.NoLamps(self)
 
     @property
     def lampsThreads(self):
@@ -87,7 +92,8 @@ class Exposure(exposure.Exposure):
     def sendGoLampsSignal(self):
         """ Wait for all shutters to be opened to send go signal. """
         if all([thread.shuttersOpen for thread in self.smThreads]):
-            self.lampsThread.goSignal = True
+            for lampThread in self.lampsThreads:
+                lampThread.goSignal = True
 
 
 class ShutterExposure(Exposure):
