@@ -1,7 +1,7 @@
 import ics.utils.time as pfsTime
 from ics.utils.threading import threaded
 from spsActor.utils import exposure, slitControl
-
+import spsActor.utils.exception as exception
 
 class SpecModuleExposure(exposure.SpecModuleExposure):
     """ Placeholder to handle spectograph module cmd threading. """
@@ -35,6 +35,9 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         self.slitControl.goSignal = True
 
         while not self.slitSliding:
+            if self.exp.doAbort:
+                raise exception.ExposureAborted
+
             pfsTime.sleep.millisec()
 
     def slitState(self, keyVar):
