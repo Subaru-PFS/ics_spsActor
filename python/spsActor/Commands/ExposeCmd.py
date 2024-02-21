@@ -6,7 +6,9 @@ import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 import spsActor.Commands.cmdList as sync
 from ics.utils.threading import singleShot
-from spsActor.utils import driftSlitExposure
+import spsActor.utils.driftSlitExposure.exposure as driftSlitExposure
+import spsActor.utils.driftSlitExposure.lampExposure as driftSlitLampExposure
+
 from spsActor.utils import exposure, lampsExposure
 from functools import partial
 reload(exposure)
@@ -136,9 +138,9 @@ class ExposeCmd(object):
             cls = exposure.DarkExposure
         elif doSlideSlit:
             if doLamps or doIIS:
-                cls = partial(driftSlitExposure.Exposure, doLamps=doLamps)
+                cls = partial(driftSlitLampExposure.Exposure, doLamps=doLamps)
             else:
-                cls = driftSlitExposure.ShutterExposure
+                cls = driftSlitExposure.Exposure
         elif doLamps:
             cls = lampsExposure.Exposure
         elif doShutterTiming:
