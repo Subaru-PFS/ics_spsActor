@@ -17,34 +17,43 @@ class SyncCmd(object):
         # passed a single argument, the parsed and typed command.
         #
         self.name = "sync"
+        spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
         self.vocab = [
-            ('slit', '<focus> [@(microns)] [@(abs)] [<specNums>] [<cams>]', self.slitFocus),
-            ('slit', 'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] [<specNums>] [<cams>]', self.slitDither),
-            ('slit', 'home [<specNums>] [<cams>]', self.slitHome),
-            ('slit', 'start [<specNums>] [<cams>]', self.slitStart),
-            ('slit', 'stop [<specNums>] [<cams>]', self.slitStop),
+            ('slit', f'<focus> [@(microns)] [@(abs)] {spsArgs}', self.slitFocus),
+            ('slit', f'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] {spsArgs}', self.slitDither),
+            ('slit', f'home {spsArgs}', self.slitHome),
+            ('slit', f'start {spsArgs}', self.slitStart),
+            ('slit', f'stop {spsArgs}', self.slitStop),
 
-            ('rda', '@moveTo @(low|med) [<specNums>] [<cams>]', self.rdaMove),
+            ('rda', f'@moveTo @(low|med) {spsArgs}', self.rdaMove),
 
-            ('bia', '@on [strobe] [<power>] [<duty>] [<period>] [<specNums>] [<cams>]', self.biaSwitchOn),
-            ('bia', '@off [<specNums>] [<cams>]', self.biaSwitchOff),
-            ('bia', '@strobe @off [<specNums>] [<cams>]', self.biaSwitchOff),
+            ('bia', f'@on [strobe] [<power>] [<duty>] [<period>] {spsArgs}', self.biaSwitchOn),
+            ('bia', f'@off {spsArgs}', self.biaSwitchOff),
+            ('bia', f'@strobe @off {spsArgs}', self.biaSwitchOff),
 
-            ('iis', '<on> [<warmingTime>] [<cams>]', self.iisOn),
-            ('iis', '<off> [<cams>]', self.iisOff),
-            ('iis', f'prepare [<halogen>] [<argon>] [<hgar>] [<neon>] [<krypton>] [<cams>]', self.iisPrepare),
-            ('ccdMotors', 'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] [<cams>]', self.ccdMotors),
-            ('fpa', 'toFocus [<cams>]', self.fpaToFocus),
-            ('fpa', 'moveFocus [<microns>] [@(abs)] [<cams>]', self.fpaMoveFocus),
+            ('iis', f'<on> [<warmingTime>] {spsArgs}', self.iisOn),
+            ('iis', f'<off> {spsArgs}', self.iisOff),
+            ('iis', f'prepare [<halogen>] [<argon>] [<hgar>] [<neon>] [<krypton>] {spsArgs}', self.iisPrepare),
+            ('ccdMotors', f'move [<a>] [<b>] [<c>] [<piston>] [@(microns)] [@(abs)] {spsArgs}', self.ccdMotors),
+            ('fpa', f'toFocus {spsArgs}', self.fpaToFocus),
+            ('fpa', f'moveFocus [<microns>] [@(abs)] {spsArgs}', self.fpaMoveFocus),
         ]
 
         # Define typed command arguments for the above commands.
         self.keys = keys.KeysDictionary("sps_sync", (1, 1),
                                         keys.Key('focus', types.Float(), help='focus value'),
+                                        keys.Key("cam", types.String() * (1,),
+                                                 help='list of camera to take exposure from'),
                                         keys.Key("cams", types.String() * (1,),
                                                  help='list of camera to take exposure from'),
+                                        keys.Key('specNum', types.Int() * (1,),
+                                                 help='spectrograph module(s) to take exposure from'),
                                         keys.Key('specNums', types.Int() * (1,),
-                                                 help='spectrograph module(s)'),
+                                                 help='spectrograph module(s) to take exposure from'),
+                                        keys.Key("arm", types.String() * (1,),
+                                                 help='arm to take exposure from'),
+                                        keys.Key("arms", types.String() * (1,),
+                                                 help='arm to take exposure from'),
                                         keys.Key("a", types.Float(),
                                                  help='the number of ticks/microns to move actuator A'),
                                         keys.Key("b", types.Float(),
@@ -82,32 +91,14 @@ class SyncCmd(object):
         except KeyError:
             raise RuntimeError('%s controller is not connected.' % self.name)
 
-    def findSpecNums(self, cmdKeys):
-        """Get specNum from cmdKeys if specified, get values from spsConfig otherwise.
-
-       Parameters
-       ----------
-       cmdKeys : `str`
-           camera used to measure fiducials position.
-       """
-        if 'cams' in cmdKeys:
-            specNums = list(set([int(cam[-1]) for cam in cmdKeys['cams'].values]))
-        elif 'specNums' in cmdKeys:
-            specNums = list(map(int, cmdKeys['specNums'].values))
-        else:
-            specNums = [specModule.specNum for specModule in self.actor.spsConfig.selectModules()]
-
-        return specNums
-
     @singleShot
     def slitFocus(self, cmd):
         """Focus multiple slits synchronously."""
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         focus = cmdKeys['focus'].values[0]
         microns = 'microns' in cmdKeys
         abs = 'abs' in cmdKeys
-        specNums = self.findSpecNums(cmdKeys)
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='', focus=focus, microns=microns, abs=abs)
         syncCmd.process(cmd)
@@ -115,14 +106,13 @@ class SyncCmd(object):
     @singleShot
     def slitDither(self, cmd):
         """Dither multiple slits synchronously."""
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         ditherX = cmdKeys['x'].values[0] if 'x' in cmdKeys else None
         ditherY = cmdKeys['y'].values[0] if 'y' in cmdKeys else None
         microns = 'microns' in cmdKeys
         pixels = 'pixels' in cmdKeys
         abs = 'abs' in cmdKeys
-        specNums = self.findSpecNums(cmdKeys)
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='dither',
                                 x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
@@ -131,8 +121,7 @@ class SyncCmd(object):
     @singleShot
     def slitHome(self, cmd):
         """Move all slits to home."""
-        cmdKeys = cmd.cmd.keywords
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='home')
         syncCmd.process(cmd)
@@ -140,8 +129,7 @@ class SyncCmd(object):
     @singleShot
     def slitStart(self, cmd):
         """Start all slits."""
-        cmdKeys = cmd.cmd.keywords
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         syncCmd = sync.SlitStart(self.actor, specNums=specNums)
         syncCmd.process(cmd)
@@ -149,8 +137,7 @@ class SyncCmd(object):
     @singleShot
     def slitStop(self, cmd):
         """Stop all slits"""
-        cmdKeys = cmd.cmd.keywords
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         syncCmd = sync.SlitStop(self.actor, specNums=specNums)
         syncCmd.process(cmd)
@@ -158,8 +145,7 @@ class SyncCmd(object):
     @singleShot
     def rdaMove(self, cmd):
         """Move multiple rda synchronously."""
-        cmdKeys = cmd.cmd.keywords
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         if 'low' in cmdKeys:
             targetPosition = 'low'
@@ -174,13 +160,12 @@ class SyncCmd(object):
     @singleShot
     def biaSwitchOn(self, cmd):
         """Switch multiple bia synchronously."""
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
 
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
         period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
         duty = cmdKeys['duty'].values[0] if 'duty' in cmdKeys else None
         strobe = 'strobe' in cmdKeys
-        specNums = self.findSpecNums(cmdKeys)
 
         syncCmd = sync.BiaSwitch(self.actor, state='on', specNums=specNums,
                                  strobe=strobe, power=power, period=period, duty=duty)
@@ -189,9 +174,7 @@ class SyncCmd(object):
     @singleShot
     def biaSwitchOff(self, cmd):
         """Switch multiple bia synchronously."""
-        cmdKeys = cmd.cmd.keywords
-
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
         state = 'strobe off' if 'strobe' in cmdKeys else 'off'
 
         syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
@@ -200,7 +183,8 @@ class SyncCmd(object):
     @singleShot
     def ccdMotors(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
+
         a = cmdKeys['a'].values[0] if 'a' in cmdKeys else None
         b = cmdKeys['b'].values[0] if 'b' in cmdKeys else None
         c = cmdKeys['c'].values[0] if 'c' in cmdKeys else None
@@ -208,21 +192,14 @@ class SyncCmd(object):
         microns = 'microns' in cmdKeys
         abs = 'abs' in cmdKeys
 
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
-        cams = self.actor.spsConfig.identify(cams=cams)
-
         syncCmd = sync.FpaMove(self.actor, cams=cams, cmdHead='move',
                                a=a, b=b, c=c, piston=piston, microns=microns, abs=abs)
-
         syncCmd.process(cmd)
 
     @singleShot
     def fpaToFocus(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys = cmd.cmd.keywords
-
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
-        cams = self.actor.spsConfig.identify(cams=cams)
+        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
 
         syncCmd = sync.FpaMove(self.actor, cams=cams, cmdHead='toFocus')
         syncCmd.process(cmd)
@@ -230,13 +207,10 @@ class SyncCmd(object):
     @singleShot
     def fpaMoveFocus(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
 
         microns = cmdKeys['microns'].values[0] if 'microns' in cmdKeys else None
         abs = 'abs' in cmdKeys
-
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else None
-        cams = self.actor.spsConfig.identify(cams=cams)
 
         syncCmd = sync.FpaMove(self.actor, cams=cams, microns=microns, abs=abs, cmdHead='moveFocus')
         syncCmd.process(cmd)
@@ -244,9 +218,7 @@ class SyncCmd(object):
     @singleShot
     def iisOn(self, cmd):
         """Turn multiple iis on synchronously."""
-        cmdKeys = cmd.cmd.keywords
-
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
         on = cmdKeys['on'].values
         warmingTime = cmdKeys['warmingTime'].values[0] if 'warmingTime' in cmdKeys else False
 
@@ -256,9 +228,7 @@ class SyncCmd(object):
     @singleShot
     def iisOff(self, cmd):
         """Turn multiple iis off synchronously."""
-        cmdKeys = cmd.cmd.keywords
-
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
         off = cmdKeys['off'].values
 
         syncCmd = sync.IisOff(self.actor, specNums=specNums, off=off)
@@ -267,9 +237,7 @@ class SyncCmd(object):
     @singleShot
     def iisPrepare(self, cmd):
         """Turn multiple iis off synchronously."""
-        cmdKeys = cmd.cmd.keywords
-
-        specNums = self.findSpecNums(cmdKeys)
+        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
         lampKeys = {name: int(round(cmdKeys[name].values[0])) for name in lampState.allLamps if name in cmdKeys}
 
         syncCmd = sync.IisPrepare(self.actor, specNums=specNums, **lampKeys)
