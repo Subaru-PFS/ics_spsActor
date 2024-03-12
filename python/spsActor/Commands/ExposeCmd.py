@@ -11,6 +11,7 @@ import spsActor.utils.driftSlitExposure.lampExposure as driftSlitLampExposure
 
 from spsActor.utils import exposure, lampsExposure
 from functools import partial
+
 reload(exposure)
 reload(sync)
 
@@ -26,8 +27,8 @@ class ExposeCmd(object):
         # associated methods when matched. The callbacks will be
         # passed a le   le argument, the parsed and typed command.
         #
-
-        expArgs = '[<visit>] [<cam>] [<cams>] [@doTest] [@doScienceCheck]'
+        spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
+        expArgs = f'[<visit>] {spsArgs} [@doTest] [@doScienceCheck]'
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -50,10 +51,18 @@ class ExposeCmd(object):
         # Define typed command arguments for the above commands.
         self.keys = keys.KeysDictionary("sps_expose", (1, 1),
                                         keys.Key("exptime", types.Float(), help="The exposure time"),
-                                        keys.Key("cam", types.String(),
-                                                 help='single camera to take exposure from'),
+                                        keys.Key("cam", types.String() * (1,),
+                                                 help='list of camera to take exposure from'),
                                         keys.Key("cams", types.String() * (1,),
                                                  help='list of camera to take exposure from'),
+                                        keys.Key('specNum', types.Int() * (1,),
+                                                 help='spectrograph module(s) to take exposure from'),
+                                        keys.Key('specNums', types.Int() * (1,),
+                                                 help='spectrograph module(s) to take exposure from'),
+                                        keys.Key("arm", types.String() * (1,),
+                                                 help='arm to take exposure from'),
+                                        keys.Key("arms", types.String() * (1,),
+                                                 help='arm to take exposure from'),
                                         keys.Key("visit", types.Int(),
                                                  help='PFS visit id'),
                                         keys.Key("window", types.Int() * (1, 2),
@@ -82,7 +91,7 @@ class ExposeCmd(object):
 
             return not len(notInHome)
 
-        cmdKeys = cmd.cmd.keywords
+        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
 
         exptype = None
         blueWindow = redWindow = False
@@ -93,12 +102,8 @@ class ExposeCmd(object):
         exptime = cmdKeys['exptime'].values[0] if exptype != 'bias' else 0
         visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
 
-        cams = [cmdKeys['cam'].values[0]] if 'cam' in cmdKeys else None
-        cams = cmdKeys['cams'].values if 'cams' in cmdKeys else cams
-        cams = self.actor.spsConfig.identify(cams=cams)
-
         doLamps = 'doLamps' in cmdKeys
-        doShutterTiming = 'doShutterTiming'  in cmdKeys
+        doShutterTiming = 'doShutterTiming' in cmdKeys
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
         doScienceCheck = 'doScienceCheck' in cmdKeys
