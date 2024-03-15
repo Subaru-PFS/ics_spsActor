@@ -94,7 +94,8 @@ class SyncCmd(object):
     @singleShot
     def slitFocus(self, cmd):
         """Focus multiple slits synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         focus = cmdKeys['focus'].values[0]
         microns = 'microns' in cmdKeys
@@ -106,7 +107,8 @@ class SyncCmd(object):
     @singleShot
     def slitDither(self, cmd):
         """Dither multiple slits synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         ditherX = cmdKeys['x'].values[0] if 'x' in cmdKeys else None
         ditherY = cmdKeys['y'].values[0] if 'y' in cmdKeys else None
@@ -121,7 +123,8 @@ class SyncCmd(object):
     @singleShot
     def slitHome(self, cmd):
         """Move all slits to home."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='home')
         syncCmd.process(cmd)
@@ -129,7 +132,8 @@ class SyncCmd(object):
     @singleShot
     def slitStart(self, cmd):
         """Start all slits."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         syncCmd = sync.SlitStart(self.actor, specNums=specNums)
         syncCmd.process(cmd)
@@ -137,7 +141,8 @@ class SyncCmd(object):
     @singleShot
     def slitStop(self, cmd):
         """Stop all slits"""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         syncCmd = sync.SlitStop(self.actor, specNums=specNums)
         syncCmd.process(cmd)
@@ -145,7 +150,8 @@ class SyncCmd(object):
     @singleShot
     def rdaMove(self, cmd):
         """Move multiple rda synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         if 'low' in cmdKeys:
             targetPosition = 'low'
@@ -160,7 +166,8 @@ class SyncCmd(object):
     @singleShot
     def biaSwitchOn(self, cmd):
         """Switch multiple bia synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
         period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
@@ -174,7 +181,8 @@ class SyncCmd(object):
     @singleShot
     def biaSwitchOff(self, cmd):
         """Switch multiple bia synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
         state = 'strobe off' if 'strobe' in cmdKeys else 'off'
 
         syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
@@ -183,7 +191,8 @@ class SyncCmd(object):
     @singleShot
     def ccdMotors(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
+        cmdKeys = cmd.cmd.keywords
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
         a = cmdKeys['a'].values[0] if 'a' in cmdKeys else None
         b = cmdKeys['b'].values[0] if 'b' in cmdKeys else None
@@ -199,7 +208,8 @@ class SyncCmd(object):
     @singleShot
     def fpaToFocus(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
+        cmdKeys = cmd.cmd.keywords
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
         syncCmd = sync.FpaMove(self.actor, cams=cams, cmdHead='toFocus')
         syncCmd.process(cmd)
@@ -207,7 +217,8 @@ class SyncCmd(object):
     @singleShot
     def fpaMoveFocus(self, cmd):
         """Move multiple ccdMotors synchronously."""
-        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
+        cmdKeys = cmd.cmd.keywords
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
         microns = cmdKeys['microns'].values[0] if 'microns' in cmdKeys else None
         abs = 'abs' in cmdKeys
@@ -218,7 +229,8 @@ class SyncCmd(object):
     @singleShot
     def iisOn(self, cmd):
         """Turn multiple iis on synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
         on = cmdKeys['on'].values
         warmingTime = cmdKeys['warmingTime'].values[0] if 'warmingTime' in cmdKeys else False
 
@@ -228,7 +240,8 @@ class SyncCmd(object):
     @singleShot
     def iisOff(self, cmd):
         """Turn multiple iis off synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
         off = cmdKeys['off'].values
 
         syncCmd = sync.IisOff(self.actor, specNums=specNums, off=off)
@@ -237,7 +250,8 @@ class SyncCmd(object):
     @singleShot
     def iisPrepare(self, cmd):
         """Turn multiple iis off synchronously."""
-        cmdKeys, specNums = self.actor.spsConfig.keysToSpecNum(cmd)
+        cmdKeys = cmd.cmd.keywords
+        specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
         lampKeys = {name: int(round(cmdKeys[name].values[0])) for name in lampState.allLamps if name in cmdKeys}
 
         syncCmd = sync.IisPrepare(self.actor, specNums=specNums, **lampKeys)

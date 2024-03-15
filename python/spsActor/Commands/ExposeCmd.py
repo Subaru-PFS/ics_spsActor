@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 
+from functools import partial
 from importlib import reload
 
 import opscore.protocols.keys as keys
 import opscore.protocols.types as types
 import spsActor.Commands.cmdList as sync
-from ics.utils.threading import singleShot
 import spsActor.utils.driftSlitExposure.exposure as driftSlitExposure
 import spsActor.utils.driftSlitExposure.lampExposure as driftSlitLampExposure
-
+from ics.utils.threading import singleShot
 from spsActor.utils import exposure, lampsExposure
-from functools import partial
 
 reload(exposure)
 reload(sync)
@@ -91,7 +90,8 @@ class ExposeCmd(object):
 
             return not len(notInHome)
 
-        cmdKeys, cams = self.actor.spsConfig.keysToCam(cmd)
+        cmdKeys = cmd.cmd.keywords
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
         exptype = None
         blueWindow = redWindow = False
