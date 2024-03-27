@@ -180,10 +180,13 @@ class HxExposure(QThread):
 
     def _ramp(self, cmd, expectedExptime=0):
         """Send h4 ramp command and handle reply."""
-        expectedExptime = f'expectedExptime={expectedExptime}' if expectedExptime else ''
-        cmdStr = f'ramp nread={self.nRead0} visit={self.exp.visit} exptype={self.exptype} {expectedExptime}'.strip()
+        cmdParams = dict(nread=self.nRead0, visit=self.exp.visit,
+                         pfsDesign=f'{self.exp.designId:016x},{self.exp.designName}',
+                         exptype=self.exptype)
+        if expectedExptime:
+            cmdParams["expectedExptime"] = expectedExptime
 
-        self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdStr,
+        self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdUtils.parse('ramp', **cmdParams),
                                             timeLim=(self.nRead0 + 2) * self.readTime + 60)
 
         if self.rampVar.didFail:

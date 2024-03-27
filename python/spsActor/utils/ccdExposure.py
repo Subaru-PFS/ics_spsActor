@@ -95,10 +95,13 @@ class CcdExposure(QThread):
         exptime = darktime if exptime is None else exptime
         exptime = round(exptime, 3)
 
-        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'read {self.exptype} '
-                                                                  f'visit={visit} exptime={exptime} '
-                                                                  f'darktime={darktime} obstime={dateobs} '
-                                                                  f'{self.readFlavour}',
+        cmdParams = dict(exptype=self.exptype, visit=visit, exptime=exptime,
+                         pfsDesign=f'0x{self.exp.designId:016x},{self.exp.designName}',
+                         darktime=darktime, obstime=dateobs)
+        if self.readFlavour:
+            cmdParams["readFlavour"] = self.readFlavour
+
+        cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=cmdUtils.parse('read', **cmdParams),
                                       timeLim=CcdExposure.readTimeLim)
 
         if cmdVar.didFail:
