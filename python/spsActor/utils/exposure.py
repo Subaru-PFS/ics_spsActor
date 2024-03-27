@@ -14,6 +14,7 @@ from spsActor.utils import hxExposure
 from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
 from spsActor.utils.ids import SpsIds as idsUtils
+from spsActor.utils.designId import getPfsDesignIdAndName
 from twisted.internet import reactor
 
 
@@ -300,6 +301,7 @@ class Exposure(object):
 
         self.actor = actor
         self.visit = visit
+        self.designId, self.designName = getPfsDesignIdAndName(visit)
         self.exptype = exptype
         self.exptime = exptime
 
