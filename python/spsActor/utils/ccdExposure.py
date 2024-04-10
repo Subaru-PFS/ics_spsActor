@@ -95,9 +95,10 @@ class CcdExposure(QThread):
         exptime = darktime if exptime is None else exptime
         exptime = round(exptime, 3)
 
-        cmdParams = dict(exptype=self.exptype, visit=visit, exptime=exptime,
-                         pfsDesign=f'0x{self.exp.designId:016x},"{self.exp.designName}"',
-                         darktime=darktime, obstime=dateobs)
+        cmdParams = {self.exptype: True}
+        cmdParams.update(**dict(visit=visit, exptime=exptime,
+                                pfsDesign=f'0x{self.exp.designId:016x},"{self.exp.designName}"',
+                                darktime=darktime, obstime=dateobs))
         if self.readFlavour:
             cmdParams["readFlavour"] = self.readFlavour
 
