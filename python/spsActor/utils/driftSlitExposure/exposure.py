@@ -1,7 +1,8 @@
 import ics.utils.time as pfsTime
+import spsActor.utils.exception as exception
 from ics.utils.threading import threaded
 from spsActor.utils import exposure, slitControl
-import spsActor.utils.exception as exception
+
 
 class SpecModuleExposure(exposure.SpecModuleExposure):
     """ Placeholder to handle spectograph module cmd threading. """

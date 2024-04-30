@@ -284,10 +284,9 @@ class SpecModuleExposure(QThread):
 class Exposure(object):
     """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
-    expTimeOverHead = 0.5
 
     def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
-                 redWindow=False, **kwargs):
+                 redWindow=False, expTimeOverHead=0, **kwargs):
         # save the actual exptype first
         self.coreExpType = exptype
         # force exptype == test.
@@ -296,7 +295,10 @@ class Exposure(object):
 
         self.doAbort = False
         self.doFinish = False
-        self.syncSpectrograph = False
+        self.syncSpectrograph = actor.actorConfig['exposure']['doSyncSpectrograph']
+        self.expTimeOverHead = max(actor.actorConfig['exposure']['expTimeOverHead'], expTimeOverHead)
+        self.rampConfig = actor.actorConfig['exposure']['ramp']
+
         self.didGenShutterKey = dict(open=False, close=False)
 
         self.actor = actor
@@ -507,8 +509,7 @@ class Exposure(object):
 
 
 class DarkExposure(Exposure):
-    """CaliDarkExposureb object."""
-    expTimeOverHead = 0
+    """DarkExposure object."""
 
     def __init__(self, *args, **kwargs):
         Exposure.__init__(self, *args, **kwargs)

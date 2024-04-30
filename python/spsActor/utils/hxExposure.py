@@ -45,7 +45,9 @@ class HxExposure(QThread):
                 # signal = ramp[-1] - ramp[0], you need a clean ramp[0] that will be subtracted, and you need an extra
                 # after the shutter/lamp transition.
                 # In other words you always need to bracket your signal with clean/stable ramps.
-                nRead = (exp.exptime + exp.expTimeOverHead) // self.readTime + 3
+                # EDIT APRIL24 : to be able to synchronise h4 safely, an extra-read was added.
+                nReadMin = exp.rampConfig['nReadMin'] + exp.rampConfig['nExtraRead']
+                nRead = (exp.exptime + exp.expTimeOverHead) // self.readTime + nReadMin
 
             return int(nRead)
 
@@ -138,7 +140,7 @@ class HxExposure(QThread):
         doFinalize = self.doFinalize and nRead < self.nRead  # it is too late otherwise in any-case.
 
         if doFinalize:
-            doStop = nRead < (self.nRead - 1)
+            doStop = nRead < (self.nRead - (1 + self.exp.rampConfig['nExtraRead']))
             # if doStop set nRead to the next one.
             if doStop:
                 self.nRead = nRead + 1
