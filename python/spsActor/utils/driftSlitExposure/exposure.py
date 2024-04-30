@@ -61,8 +61,8 @@ class Exposure(exposure.Exposure):
 
     def __init__(self, *args, slideSlitPixelRange, **kwargs):
         self.pixelRange = slideSlitPixelRange
-
-        exposure.Exposure.__init__(self, *args, **kwargs)
+        # Hexapod takes time to start the motion, hence the delay to be at constant speed.
+        exposure.Exposure.__init__(self, *args, expTimeOverHead=10, **kwargs)
 
     @property
     def slitThreads(self):
