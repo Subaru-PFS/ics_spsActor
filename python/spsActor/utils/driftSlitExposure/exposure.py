@@ -1,7 +1,8 @@
 import ics.utils.time as pfsTime
+import spsActor.utils.exception as exception
 from ics.utils.threading import threaded
 from spsActor.utils import exposure, slitControl
-import spsActor.utils.exception as exception
+
 
 class SpecModuleExposure(exposure.SpecModuleExposure):
     """ Placeholder to handle spectograph module cmd threading. """
@@ -60,8 +61,8 @@ class Exposure(exposure.Exposure):
 
     def __init__(self, *args, slideSlitPixelRange, **kwargs):
         self.pixelRange = slideSlitPixelRange
-
-        exposure.Exposure.__init__(self, *args, **kwargs)
+        # Hexapod takes time to start the motion, hence the delay to be at constant speed.
+        exposure.Exposure.__init__(self, *args, expTimeOverHead=10, **kwargs)
 
     @property
     def slitThreads(self):

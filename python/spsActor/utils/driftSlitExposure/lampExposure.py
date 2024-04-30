@@ -46,12 +46,12 @@ class SpecModuleExposure(lampsExposure.SpecModuleExposure):
 
 class Exposure(lampsExposure.Exposure):
     SpecModuleExposureClass = SpecModuleExposure
-    expTimeOverHead = 10
     shutterOverHead = 15
 
     def __init__(self, *args, slideSlitPixelRange, doLamps=True, **kwargs):
         self.pixelRange = slideSlitPixelRange
-        lampsExposure.Exposure.__init__(self, *args, doLamps=doLamps, **kwargs)
+        # Hexapod takes time to start the motion, hence the delay to be at constant speed.
+        lampsExposure.Exposure.__init__(self, *args, doLamps=doLamps, expTimeOverHead=10, **kwargs)
 
     @property
     def slitThreads(self):
