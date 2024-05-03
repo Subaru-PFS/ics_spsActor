@@ -99,8 +99,9 @@ class CcdExposure(QThread):
         cmdParams.update(**dict(visit=visit, exptime=exptime,
                                 pfsDesign=f'0x{self.exp.designId:016x},"{self.exp.designName}"',
                                 darktime=darktime, obstime=dateobs))
+        # this is disgusting.
         if self.readFlavour:
-            cmdParams["readFlavour"] = self.readFlavour
+            cmdParams[self.readFlavour] = True
 
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=cmdUtils.parse('read', **cmdParams),
                                       timeLim=CcdExposure.readTimeLim)
