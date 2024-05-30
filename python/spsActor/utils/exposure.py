@@ -13,8 +13,8 @@ from spsActor.utils import ccdExposure
 from spsActor.utils import hxExposure
 from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
-from spsActor.utils.ids import SpsIds as idsUtils
 from spsActor.utils.designId import getPfsDesignIdAndName
+from spsActor.utils.ids import SpsIds as idsUtils
 from twisted.internet import reactor
 
 
@@ -292,6 +292,8 @@ class Exposure(object):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
         self.cmd = None
+        self.pfsConfig = None
+        self.pfsConfigPath = ''
 
         self.doAbort = False
         self.doFinish = False
@@ -318,6 +320,8 @@ class Exposure(object):
 
         self.failures = exception.Failures()
         self.smThreads = self.instantiate(cams)
+
+        reactor.callLater(1, self.loadPfsConfig)
 
     @property
     def camExp(self):
@@ -438,14 +442,28 @@ class Exposure(object):
             if state == 'close':
                 reactor.callLater(1, self.updatePfsConfigFiberStatus)
 
-    def updatePfsConfigFiberStatus(self):
-        """Update pfsConfig fiberStatus."""
+    def loadPfsConfig(self):
+        """
+        Load the pfsConfig from the most recent raw data directory.
+
+        The function first finds the path to the pfsConfig for the
+        current visit, and then reads the file using the PfsConfig._readImpl method.
+        The path and the pfsConfig are stored as attributes of the object.
+        """
 
         def findPfsConfig(visit):
             lastDate = max(glob.glob(os.path.join('/data/raw', '*/')), key=os.path.getmtime)
             dirName = os.path.join(lastDate, 'pfsConfig')
             [pfsConfigPath] = glob.glob(os.path.join(dirName, 'pfsConfig-*-%06d.fits' % visit))
             return pfsConfigPath
+
+        self.pfsConfigPath = findPfsConfig(self.visit)
+        self.pfsConfig = PfsConfig._readImpl(self.pfsConfigPath)
+
+        self.actor.logger.info(f'Loading pfsConfig from {self.pfsConfigPath}')
+
+    def updatePfsConfigFiberStatus(self):
+        """Update pfsConfig fiberStatus."""
 
         def overWritePfsConfig(pfsConfig, fileName):
             os.chmod(fileName, 0o644)
@@ -454,8 +472,11 @@ class Exposure(object):
             os.chmod(fileName, 0o444)
 
         doOverWritePfsConfig = False
-        fileName = findPfsConfig(self.visit)
-        pfsConfig = PfsConfig._readImpl(fileName)
+
+        if not self.pfsConfig:
+            return
+
+        pfsConfig = self.pfsConfig
 
         for specNum in range(1, 5):
             specModule = [thread for thread in self.smThreads if thread.specNum == specNum]
@@ -488,7 +509,7 @@ class Exposure(object):
                 doOverWritePfsConfig = True
 
         if doOverWritePfsConfig:
-            overWritePfsConfig(pfsConfig, fileName)
+            overWritePfsConfig(pfsConfig, self.pfsConfigPath)
 
     def exit(self):
         """Free up all resources."""
