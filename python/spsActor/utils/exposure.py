@@ -294,6 +294,7 @@ class Exposure(object):
         self.cmd = None
         self.pfsConfig = None
         self.pfsConfigPath = ''
+        self.pfsConfigFinalized = False
 
         self.doAbort = False
         self.doFinish = False
@@ -511,8 +512,19 @@ class Exposure(object):
         if doOverWritePfsConfig:
             overWritePfsConfig(pfsConfig, self.pfsConfigPath)
 
+        self.genPfsConfigFinalizedKey(self.cmd)
+
+    def genPfsConfigFinalizedKey(self, cmd, pfsConfigFinalized=True):
+        """Generate a key to declare that the PFS config is finalized and ready to be ingested."""
+        if not self.pfsConfigFinalized:
+            self.pfsConfigFinalized = pfsConfigFinalized
+            cmd.inform(f'pfsConfigFinalized={self.visit},{self.pfsConfigFinalized}')
+
     def exit(self):
         """Free up all resources."""
+        # just declare it just in case.
+        self.genPfsConfigFinalizedKey(self.actor.bcast, pfsConfigFinalized=self.pfsConfig is not None)
+
         for thread in self.threads:
             thread.exit()
 
@@ -546,3 +558,8 @@ class DarkExposure(Exposure):
     def instantiate(self, cams):
         """Create underlying CcdExposure threads object."""
         return [factory(self, cam) for cam in cams]
+
+    def loadPfsConfig(self):
+        """Load pfsConfig and declare it finalized right away since bias/dark pfsConfig will not be updated."""
+        Exposure.loadPfsConfig(self)
+        self.genPfsConfigFinalizedKey(self.cmd)
