@@ -27,6 +27,7 @@ class CcdExposure(QThread):
         self.ccd = f'ccd_{cam}'
 
         self.wipedAt = None
+        self.exptime = None
         self.readVar = None
         self.cleared = None
 
@@ -69,6 +70,10 @@ class CcdExposure(QThread):
             return 'cleared'
 
         return self.exp.actor.models[self.ccd].keyVarDict['exposureState'].getValue(doRaise=False)
+
+    @property
+    def specConfig(self):
+        return self.exp.actor.spsConfig[f'sm{self.cam.specNum}']
 
     def exposureState(self, keyVar):
         """Exposure State callback."""
@@ -147,11 +152,17 @@ class CcdExposure(QThread):
         try:
             self.wipedAt = self._wipe(cmd)
             dateobs = self.integrate()
-            self.exptime = self._read(cmd, visit, dateobs)
-
         except Exception as e:
+            # if it failed early or exposure aborted, clear and abort.
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
+            return
+
+        try:
+            self.exptime = self._read(cmd, visit, dateobs)
+        except exception.ReadFailed as e:
+            self.handleReadFailed(cmd)
+            self.exp.failures.add(reason=str(e))  # at this point, no need to abort, just report the failure.
 
     @threaded
     def wipe(self, cmd):
@@ -168,8 +179,18 @@ class CcdExposure(QThread):
         try:
             self.exptime = self._read(cmd, visit, dateobs, exptime)
         except exception.ReadFailed as e:
+            self.handleReadFailed(cmd)
+            self.exp.failures.add(reason=str(e))  # at this point, no need to abort, just report the failure.
+
+    def handleReadFailed(self, cmd):
+        """Handle read failure"""
+        # auto clearing the exposure in that case.
+        if self.specConfig.lightSource != 'pfi':
             self.clearExposure(cmd)
-            self.exp.abort(cmd, reason=str(e))
+            return
+
+        self.actor.logger.warning('Failed but still a chance to recover the data, not clearing the exposure...')
+        self.cleared = True
 
     def store(self):
         """ Store in sps_exposure in opDB database. """

@@ -1,6 +1,5 @@
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
-from ics.utils.threading import threaded
 from spsActor.utils import exposure, slitControl
 
 
@@ -9,26 +8,14 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
 
     def __init__(self, *args, **kwargs):
         exposure.SpecModuleExposure.__init__(self, *args, **kwargs)
+        # using postWipe placeholder.
+        self.postWipeFunc = self.startSlitMotionAndWait
+
         self.slitStateKeyVar = self.exp.actor.models[self.enuName].keyVarDict['slitAtSpeed']
         self.slitStateKeyVar.addCallback(self.slitState)
         self.slitSliding = False
 
         self.slitControl = slitControl.SlitControl(self.exp, self.enuName)
-
-    @threaded
-    def expose(self, cmd, visit):
-        """Full exposure routine, exceptions are catched and handled under the cover."""
-
-        try:
-            self.wipe(cmd)
-            # just interleave slit motion with normal expose routine.
-            self.startSlitMotionAndWait()
-            exptime, dateobs = self.integrate(cmd)
-            self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
-
-        except Exception as e:
-            self.clearExposure(cmd)
-            self.exp.abort(cmd, reason=str(e))
 
     def startSlitMotionAndWait(self):
         """Send go signal and wait for slit to be at speed."""
