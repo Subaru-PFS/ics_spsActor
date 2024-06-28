@@ -117,18 +117,21 @@ class SpecModuleExposure(QThread):
         """Wipe running CcdExposure and wait for integrating state.
         Note that doFinish==doAbort at the beginning of integration."""
 
-        def checkForEarlyFinish():
+        def checkAbortSignal():
             if self.exp.doFinish:
                 raise exception.EarlyFinish
 
-            if self.exp.doAbort or any(self.clearedExp):
+            if self.exp.doAbort:
                 raise exception.ExposureAborted
 
-        # do a ramp and wait for the reset frame to start wiping ccds
+        # Start the ramp.
         if self.hxExposure:
-            self.hxExposure.startAndWaitForReset(cmd)
+            self.hxExposure.ramp(cmd, expectedExptime=self.exp.exptime)
 
-        checkForEarlyFinish()
+            # And wait for the reset frame to start wiping ccds.
+            while self.hxExposure.state != 'reset':
+                pfsTime.sleep.millisec()
+                checkAbortSignal()
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
@@ -139,7 +142,7 @@ class SpecModuleExposure(QThread):
         while not all([detector.wiped for detector in self.syncThreadsToOpen]):
             pfsTime.sleep.millisec()
 
-        checkForEarlyFinish()
+        checkAbortSignal()
 
     def integrate(self, cmd, shutterTime=None):
         """Integrate for both calib and regular exposure."""
@@ -178,12 +181,26 @@ class SpecModuleExposure(QThread):
 
         try:
             self.wipe(cmd)
-            exptime, dateobs = self.integrate(cmd)
-            self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
+            self.postWipeFunc()
+            exposeStart = pfsTime.Time.now()
+            try:
+                exptime, dateobs = self.integrate(cmd)
+            except Exception as e:
+                if not self.shuttersOpen:
+                    self.actor.logger.warning(f'{self.specName} shutters failed before opening, discarding data...')
+                    raise
+
+                self.actor.logger.warning(f'{self.specName} shutters failed after opening, still reading data...')
+                self.exp.failures.add(reason=str(e))
+                exptime = pfsTime.Time.now().timestamp() - exposeStart.timestamp()
+                dateobs = exposeStart.isoformat()
 
         except Exception as e:
             self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
+            return
+
+        self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
     def shuttersState(self, keyVar):
         """Shutters state callback, call shuttersOpenCB() whenever open."""
@@ -256,7 +273,7 @@ class SpecModuleExposure(QThread):
             return
 
         # if we're not integrating, finishRamp as soon as possible.
-        if self.hxExposure and self.hxExposure.preparingForShutterOpen:
+        if self.hxExposure:
             self.hxExposure.finishRampASAP(cmd)
 
     def finish(self, cmd):
@@ -265,9 +282,13 @@ class SpecModuleExposure(QThread):
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
             return
 
-        # if we're not integrating, finishRamp as soon as possible.
-        if self.hxExposure and self.hxExposure.preparingForShutterOpen:
+        # shutters were not open so finish ramp ASAP.
+        if self.hxExposure:
             self.hxExposure.finishRampASAP(cmd)
+
+    def postWipeFunc(self):
+        """Placeholder for a function call after wipe."""
+        pass
 
     def exit(self):
         """Free up all resources."""

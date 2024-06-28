@@ -70,7 +70,7 @@ class HxExposure(QThread):
         self.exptime = None
         self.dateobs = None
 
-        self.state = 'none'
+        self.states = ['none']
         self.readTime = float(exp.actor.models[self.hx].keyVarDict['readTime'].getValue())
         # differentiating between the original number of read (nRead0) and current number of read(nRead).
         self.nRead = self.nRead0 = nRead(exp)
@@ -85,6 +85,7 @@ class HxExposure(QThread):
         # gotcha to pretend this is a ccd.
         self.read = self.keepShutterKeys
         # there is no concept of clearing / aborting, so just do a final read.
+        # Nota bene June24 : abort, finish are not just a placeholder, it is required.
         self.abort = self.finish = self.clearExposure = self.finishRampASAP
 
     @property
@@ -108,11 +109,11 @@ class HxExposure(QThread):
         return self.wipedAt is not None
 
     @property
-    def preparingForShutterOpen(self):
-        return self.state in ['none', 'reset']
+    def state(self):
+        return self.states[-1]
 
     def hxReadCB(self, keyVar):
-        """H4 read callback."""
+        """H4 read callback, called at the end the read."""
         visit, nRamp, nGroup, nRead = keyVar.getValue(doRaise=False)
 
         # no need to go further.
@@ -123,17 +124,17 @@ class HxExposure(QThread):
         self.actor.bcast.debug(f'text="{self.hx} {visit} {nRamp} {nGroup} {nRead}"')
 
         if nGroup == 0:
-            self.state = 'reset'
+            self.states.append('reset')
 
         # pretending this is a ccd.
-        if nGroup == 1 and nRead == 1:
+        elif nGroup == 1 and nRead == 1:
             self.wipedAt = pfsTime.timestamp()
-            self.state = 'integrating'
+            self.states.append('integrating')
 
         elif nGroup == 1 and nRead == self.nRead:
-            self.state = 'idle'
+            self.states.append('idle')
 
-        # finishRamp already sent.
+        # finishRamp(doStop=True) already sent from finishASAP.
         if self.clearASAP:
             return
 
@@ -146,6 +147,7 @@ class HxExposure(QThread):
                 self.nRead = nRead + 1
 
             self._finishRamp(self.exp.cmd, doStop=doStop)
+            self.doFinalize = False
 
     def newFileNameCB(self, keyVar):
         """H4 callback when filename gets generated."""
@@ -172,8 +174,8 @@ class HxExposure(QThread):
 
     def finishRampASAP(self, cmd):
         """Finish ramp as soon as possible."""
-        # meaning shutters has been used.
-        if self.doFinalize:
+        # meaning shutters has been used, ramp will already be told to finish at next read.
+        if self.doFinalize or self.clearASAP:
             return
 
         # whenever the ramp command returns, exposure is considered cleared.
@@ -199,10 +201,8 @@ class HxExposure(QThread):
         """Start h4 ramp."""
         try:
             self._ramp(cmd, expectedExptime=expectedExptime)
-        except exception.HxRampFailed as e:
-            failure = f"HxRampFailed{self.hx} with {cmdUtils.interpretFailure(self.rampVar)})"
-            cmd.warn(f'text="{failure}"')
-            # self.exp.abort(cmd, reason=str(e))
+        except Exception as e:
+            self.handleRampFailed(cmd, reason=str(e))
 
     @threaded
     def expose(self, cmd, visit):
@@ -214,30 +214,19 @@ class HxExposure(QThread):
         try:
             self._ramp(cmd)
         except Exception as e:
-            self.exp.abort(cmd, reason=str(e))
+            self.handleRampFailed(cmd, reason=str(e))
+
+    def handleRampFailed(self, cmd, reason):
+        """Handle ramp failure."""
+        if 'integrating' in self.states:
+            self.exp.failures.add(reason=reason)  # just report the failure, but proceed with the rest of the camera.
+        else:
+            self.exp.abort(cmd, reason=reason)  # early failure, report and abort right away.
 
     def declareFinalRead(self, cmd=None):
         """Declare that the next read will be the final one."""
         self.actor.logger.info(f'{self.hx} will be asked to finishRamp when next read is done')
         self.doFinalize = True  # actually the only way to reach the main thread.
-
-    def startAndWaitForReset(self, cmd):
-        """Minor optimization to start wiping ccds when reset frame is done?. """
-        # I have to pass the expected exposure time to hx.ramp(), will be overriden with _rampFinish.
-        self.ramp(cmd, expectedExptime=self.exp.exptime)
-
-        # sm1 wipe is too slow for this optimization for now, so skip it.
-        if str(self.cam) == 'n1':
-            return
-
-        while self.state != 'reset':
-            pfsTime.sleep.millisec()
-            # if the hx.ramp() fails you want to escape that loop.
-            if self.cleared:
-                raise exception.ExposureAborted
-
-            if self.exp.doFinish or self.exp.doAbort:
-                self.declareFinalRead()
 
     @singleShot
     def _finishRamp(self, cmd, doStop):
