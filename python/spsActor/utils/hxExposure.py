@@ -191,7 +191,7 @@ class HxExposure(QThread):
             cmdParams["expectedExptime"] = expectedExptime
 
         self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdUtils.parse('ramp', **cmdParams),
-                                            timeLim=(self.nRead0 + 2) * self.readTime + 60)
+                                            timeLim=(self.nRead0 + 2) * self.readTime + 30)
 
         if self.rampVar.didFail:
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(self.rampVar))
