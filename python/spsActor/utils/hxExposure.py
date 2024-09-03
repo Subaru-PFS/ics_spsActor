@@ -167,6 +167,11 @@ class HxExposure(QThread):
         # so way before the filepath is generated
         # But not for darks, so it needs to be done here.
         if not self.time_exp_end:
+            # should never happen, but still covering that case.
+            if not self.wipedAt:
+                self.actor.logger.warning(f'{self.hx} filename was generated but first read were never declared...')
+                self.wipedAt = pfsTime.timestamp()
+
             dateobs = pfsTime.convert.datetime_to_isoformat(pfsTime.convert.datetime_from_timestamp(self.wipedAt))
             self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.nRead0 * self.readTime)
 
@@ -195,6 +200,10 @@ class HxExposure(QThread):
 
         if self.rampVar.didFail:
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(self.rampVar))
+
+        if self.rampVar and not self.readVar:
+            self.clearASAP = True
+            raise exception.HxRampFailed(self.hx, 'ramp command finished but filename was not generated ...')
 
     @threaded
     def ramp(self, cmd, expectedExptime):
