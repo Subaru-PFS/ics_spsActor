@@ -58,6 +58,9 @@ class SpecModuleExposure(QThread):
         else:
             self.iisControl = None
 
+        # they are functionally the same.
+        self.abort = self.finish
+
         self.start()
 
     @property
@@ -96,7 +99,7 @@ class SpecModuleExposure(QThread):
 
     @property
     def isFinished(self):
-        return all(camExp.isFinished for camExp in self.camExp)
+        return all([camExp.isFinished for camExp in self.camExp])
 
     @property
     def syncThreadsToOpen(self):
@@ -130,8 +133,9 @@ class SpecModuleExposure(QThread):
 
             # And wait for the reset frame to start wiping ccds.
             while self.hxExposure.state != 'reset':
-                pfsTime.sleep.millisec()
+                self.hxExposure.checkResetTiming()  # check that that reset is done in timely manner.
                 checkAbortSignal()
+                pfsTime.sleep.millisec()
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
@@ -140,6 +144,8 @@ class SpecModuleExposure(QThread):
 
         # # if one fails, it cleared itself out.
         while not all([detector.wiped for detector in self.syncThreadsToOpen]):
+            if self.hxExposure:
+                self.hxExposure.checkFirstReadTiming()  # check that the first read is reached in timely manner.
             pfsTime.sleep.millisec()
 
         checkAbortSignal()
@@ -196,7 +202,6 @@ class SpecModuleExposure(QThread):
                 dateobs = exposeStart.isoformat()
 
         except Exception as e:
-            self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
             return
 
@@ -266,25 +271,14 @@ class SpecModuleExposure(QThread):
         for camExp in self.runExp:
             camExp.clearExposure(cmd)
 
-    def abort(self, cmd):
-        """Command shutters to abort exposure."""
-        if self.shuttersOpen:
-            self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
-            return
-
-        # if we're not integrating, finishRamp as soon as possible.
-        if self.hxExposure:
-            self.hxExposure.finishRampASAP(cmd)
-
     def finish(self, cmd):
         """Command shutters to finish exposure."""
         if self.shuttersOpen:
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
             return
 
-        # shutters were not open so finish ramp ASAP.
-        if self.hxExposure:
-            self.hxExposure.finishRampASAP(cmd)
+        # shutters were not open so finish ramp ASAP and clear CCDs.
+        self.clearExposure(cmd)
 
     def postWipeFunc(self):
         """Placeholder for a function call after wipe."""

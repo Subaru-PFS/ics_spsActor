@@ -2,6 +2,7 @@ import os
 
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
+import numpy as np
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
@@ -60,10 +61,12 @@ class HxExposure(QThread):
 
         self.doFinalize = False
         self.clearASAP = False
+        self.waitForRampCmdReturn = True
 
         self.wipedAt = None
         self.rampVar = None
         self.readVar = None
+        self.rampTiming = dict(maxResetEndTime=np.inf)
 
         # be nice and initialize those variables
         self.time_exp_end = None
@@ -98,19 +101,66 @@ class HxExposure(QThread):
 
     @property
     def isFinished(self):
-        return self.storable or self.cleared or self.nRead0 == 0
+        return self.rampVar is not None or self.cleared or not self.nRead0
 
     @property
     def cleared(self):
-        return self.rampVar is not None and (self.rampVar.didFail or self.clearASAP)
+        return self.clearASAP and (self.rampVar is not None or not self.waitForRampCmdReturn)
+
+    @property
+    def firstReadDone(self):
+        return 'integrating' in self.states
 
     @property
     def wiped(self):
-        return self.wipedAt is not None
+        return self.firstReadDone
 
     @property
     def state(self):
         return self.states[-1]
+
+    def calculateRampTiming(self):
+        """
+        Calculate timing details for ramp operations with an overhead.
+
+        Returns:
+        dict: Contains start ramp time, max reset duration, max first read duration,
+              max reset end time, and max first read end time.
+        """
+        # empirically adding 5 seconds overhead.
+        overHead = 5
+        startRamp = pfsTime.timestamp()
+        maxResetDuration = int(round(2 * self.readTime + overHead))
+        maxFirstReadDuration = int(round(3 * self.readTime + overHead))
+        maxResetEndTime = startRamp + maxResetDuration
+        maxFirstReadEndTime = startRamp + maxFirstReadDuration
+        return self.rampTiming.update(maxResetDuration=maxResetDuration, maxFirstReadDuration=maxFirstReadDuration,
+                                      maxResetEndTime=maxResetEndTime, maxFirstReadEndTime=maxFirstReadEndTime,
+                                      startRamp=startRamp)
+
+    def checkResetTiming(self):
+        """
+        Check if the reset timing has exceeded the maximum allowed duration.
+
+        Raises:
+        exception.HxRampFailed: If the state is not 'reset' and the reset duration has exceeded the limit.
+        """
+        if self.state != 'reset' and pfsTime.timestamp() > self.rampTiming['maxResetEndTime']:
+            self.waitForRampCmdReturn = False
+            raise exception.HxRampFailed(self.hx,
+                                         f'was not reset after {self.rampTiming["maxResetDuration"]} seconds')
+
+    def checkFirstReadTiming(self):
+        """
+        Check if the first read timing has exceeded the maximum allowed duration.
+
+        Raises:
+        exception.HxRampFailed: If the first read is not done and the duration has exceeded the limit.
+        """
+        if not self.firstReadDone and pfsTime.timestamp() > self.rampTiming['maxFirstReadEndTime']:
+            self.waitForRampCmdReturn = False
+            raise exception.HxRampFailed(self.hx,
+                                         f'did not reach first read after {self.rampTiming["maxFirstReadDuration"]} seconds')
 
     def hxReadCB(self, keyVar):
         """H4 read callback, called at the end the read."""
@@ -195,6 +245,9 @@ class HxExposure(QThread):
         if expectedExptime:
             cmdParams["expectedExptime"] = expectedExptime
 
+        # calculate time limit for reset time and wipe time.
+        self.calculateRampTiming()
+
         self.rampVar = self.actor.crudeCall(cmd, actor=self.hx, cmdStr=cmdUtils.parse('ramp', **cmdParams),
                                             timeLim=(self.nRead0 + 2) * self.readTime + 90)
 
@@ -202,7 +255,6 @@ class HxExposure(QThread):
             raise exception.HxRampFailed(self.hx, cmdUtils.interpretFailure(self.rampVar))
 
         if self.rampVar and not self.readVar:
-            self.clearASAP = True
             raise exception.HxRampFailed(self.hx, 'ramp command finished but filename was not generated ...')
 
     @threaded
@@ -227,7 +279,7 @@ class HxExposure(QThread):
 
     def handleRampFailed(self, cmd, reason):
         """Handle ramp failure."""
-        if 'integrating' in self.states:
+        if self.firstReadDone:
             self.exp.failures.add(reason=reason)  # just report the failure, but proceed with the rest of the camera.
         else:
             self.exp.abort(cmd, reason=reason)  # early failure, report and abort right away.
