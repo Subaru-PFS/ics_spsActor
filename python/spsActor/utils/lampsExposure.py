@@ -90,7 +90,8 @@ class Exposure(exposure.Exposure):
 
     def sendGoLampsSignal(self):
         """ Wait for all shutters to be opened to send go signal. """
-        if all([thread.shuttersOpen for thread in self.smThreads]):
+        if all([thread.shutterState.isOpen for thread in self.smThreads]):
+            # all lamps GO !
             for lampThread in self.lampsThreads:
                 lampThread.goSignal = True
 

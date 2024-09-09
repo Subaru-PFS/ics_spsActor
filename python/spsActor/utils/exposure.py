@@ -13,6 +13,7 @@ from spsActor.utils import ccdExposure
 from spsActor.utils import hxExposure
 from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
+from spsActor.utils import shutters
 from spsActor.utils.designId import getPfsDesignIdAndName
 from spsActor.utils.ids import SpsIds as idsUtils
 from twisted.internet import reactor
@@ -46,11 +47,9 @@ class SpecModuleExposure(QThread):
         # create underlying exposure objects.
         self.camExp = [factory(exp, cam) for cam in cams]
 
-        # add callback for shutters state, useful to fire process asynchronously.
-        self.shuttersOpen = False
-        self.didExpose = False
-
-        self.enuKeyVarDict['shutters'].addCallback(self.shuttersState)
+        # creating shutter state object.
+        self.shutterState = shutters.ShutterState(self)
+        self.enuKeyVarDict['shutters'].addCallback(self.shutterState.callback)
 
         # instantiate IIS control if required.
         if self.doControlIIS:
@@ -96,7 +95,7 @@ class SpecModuleExposure(QThread):
 
     @property
     def isFinished(self):
-        return all(camExp.isFinished for camExp in self.camExp)
+        return all([camExp.isFinished for camExp in self.camExp])
 
     @property
     def syncThreadsToOpen(self):
@@ -130,8 +129,9 @@ class SpecModuleExposure(QThread):
 
             # And wait for the reset frame to start wiping ccds.
             while self.hxExposure.state != 'reset':
-                pfsTime.sleep.millisec()
+                self.hxExposure.checkResetTiming()  # check that that reset is done in timely manner.
                 checkAbortSignal()
+                pfsTime.sleep.millisec()
 
         for camExp in self.runExp:
             if camExp == self.hxExposure:
@@ -140,6 +140,8 @@ class SpecModuleExposure(QThread):
 
         # # if one fails, it cleared itself out.
         while not all([detector.wiped for detector in self.syncThreadsToOpen]):
+            if self.hxExposure:
+                self.hxExposure.checkFirstReadTiming()  # check that the first read is reached in timely manner.
             pfsTime.sleep.millisec()
 
         checkAbortSignal()
@@ -153,8 +155,6 @@ class SpecModuleExposure(QThread):
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
                                           cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask} visit={self.exp.visit}',
                                           timeLim=shutterTime + SpecModuleExposure.EnuExposeTimeMargin)
-        if self.exp.doAbort:
-            raise exception.ExposureAborted
 
         if cmdVar.didFail:
             raise exception.ShuttersFailed(self.specName, cmdUtils.interpretFailure(cmdVar))
@@ -186,8 +186,9 @@ class SpecModuleExposure(QThread):
             try:
                 exptime, dateobs = self.integrate(cmd)
             except Exception as e:
-                if not self.shuttersOpen:
+                if not self.shutterState.wasOpen:
                     self.actor.logger.warning(f'{self.specName} shutters failed before opening, discarding data...')
+                    pfsTime.sleep.millisec(1000)
                     raise
 
                 self.actor.logger.warning(f'{self.specName} shutters failed after opening, still reading data...')
@@ -196,36 +197,10 @@ class SpecModuleExposure(QThread):
                 dateobs = exposeStart.isoformat()
 
         except Exception as e:
-            self.clearExposure(cmd)
             self.exp.abort(cmd, reason=str(e))
             return
 
         self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
-
-    def shuttersState(self, keyVar):
-        """Shutters state callback, call shuttersOpenCB() whenever open."""
-        state = keyVar.getValue(doRaise=False)
-
-        # track shutters state.
-        self.actor.bcast.debug(f'text="{self.specName} shutters {state}"')
-
-        didExpose = self.shuttersOpen and 'close' in state
-
-        if not self.didExpose:
-            self.didExpose = didExpose
-
-        # should cover all cases.
-        self.shuttersOpen = 'open' in state
-
-        if self.shuttersOpen:
-            self.shuttersOpenCB()
-
-        if didExpose:
-            self.shuttersCloseCB()
-
-        # Declare final read, that will call finishRamp on the next hxRead callback.
-        if didExpose and self.hxExposure:
-            self.hxExposure.declareFinalRead()
 
     def shuttersOpenCB(self):
         """Callback called whenenever shutters are opened."""
@@ -238,6 +213,10 @@ class SpecModuleExposure(QThread):
     def shuttersCloseCB(self):
         """Callback called whenenever shutters are closed after the exposure."""
         self.exp.genShutterKey('close', lightSource=self.specConfig.lightSource)
+
+        # Declare final read, that will call finishRamp on the next hxRead callback.
+        if self.hxExposure:
+            self.hxExposure.declareFinalRead()
 
     def iisIlluminated(self):
         """Check if iis was illuminated during that visit."""
@@ -267,24 +246,17 @@ class SpecModuleExposure(QThread):
             camExp.clearExposure(cmd)
 
     def abort(self, cmd):
-        """Command shutters to abort exposure."""
-        if self.shuttersOpen:
-            self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
-            return
+        """discarding exposure."""
+        self.finish(cmd, doDiscard=True)
 
-        # if we're not integrating, finishRamp as soon as possible.
-        if self.hxExposure:
-            self.hxExposure.finishRampASAP(cmd)
-
-    def finish(self, cmd):
+    def finish(self, cmd, doDiscard=False):
         """Command shutters to finish exposure."""
-        if self.shuttersOpen:
+        # shutters were not open so finish ramp ASAP and clear CCDs
+        if not self.shutterState.wasOpen or doDiscard:
+            self.clearExposure(cmd)
+        # note that when shutter command returns exposure won't be read because they are already cleared,
+        if self.shutterState.isOpen:
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
-            return
-
-        # shutters were not open so finish ramp ASAP.
-        if self.hxExposure:
-            self.hxExposure.finishRampASAP(cmd)
 
     def postWipeFunc(self):
         """Placeholder for a function call after wipe."""
@@ -293,7 +265,7 @@ class SpecModuleExposure(QThread):
     def exit(self):
         """Free up all resources."""
         # remove shutters callback.
-        self.enuKeyVarDict['shutters'].removeCallback(self.shuttersState)
+        self.enuKeyVarDict['shutters'].removeCallback(self.shutterState.callback)
 
         for camExp in self.camExp:
             camExp.exit()
@@ -451,7 +423,7 @@ class Exposure(object):
         and when all PFI-connected shutters become closed."""
         doGenerate = not self.didGenShutterKey[state]
 
-        if state == 'close' and not all([specModule.didExpose for specModule in self.smThreads]):
+        if state == 'close' and not all([specModule.shutterState.didExpose for specModule in self.smThreads]):
             doGenerate = False
 
         if doGenerate:

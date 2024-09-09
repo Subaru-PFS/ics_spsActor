@@ -71,8 +71,8 @@ class Exposure(lampsExposure.Exposure):
 
     def sendGoSlitSignal(self):
         """ Wait for all shutters to be opened to send go signal. """
-        if all([thread.shuttersOpen for thread in self.smThreads]):
-            # all slits go !
+        if all([thread.shutterState.isOpen for thread in self.smThreads]):
+            # all slits GO !
             for thread in self.smThreads:
                 thread.slitControl.goSignal = True
 

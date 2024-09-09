@@ -92,6 +92,12 @@ class EarlyFinish(Exception):
     def __str__(self):
         return f'ExposureAborted(doFinish requested before exposing)'
 
+class DiscardExposure(Exception):
+    """Exception raised when exposure is just trash and needs to be cleared ASAP."""
+
+    def __str__(self):
+        return f'ExposureDiscarded()'
+
 
 class Failures(list):
     def add(self, reason):
