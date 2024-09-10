@@ -6,6 +6,7 @@ import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
+from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
 from pfs.datamodel.pfsConfig import PfsConfig, TargetType, FiberStatus
@@ -249,13 +250,33 @@ class SpecModuleExposure(QThread):
         """discarding exposure."""
         self.finish(cmd, doDiscard=True)
 
+    @singleShot
     def finish(self, cmd, doDiscard=False):
-        """Command shutters to finish exposure."""
-        # shutters were not open so finish ramp ASAP and clear CCDs
+        """
+        Command shutters to finish the exposure, using singleShot so the operation runs in parallel.
+
+        Parameters:
+        ----------
+        cmd : object
+            The command object used to send and manage the shutter control.
+        doDiscard : bool, optional
+            If True, the exposure will be discarded (CCDs cleared and ramp stopped), regardless of shutter state.
+            Default is False.
+
+        Notes:
+        ------
+        - If the shutters were not open or if doDiscard is True, the exposure is discarded by clearing the CCDs
+          and stopping the ramp.
+        - If the exposure was discarded, when the shutter command returns, the read command will be skipped.
+        - The finish operation only completes when the shutters are fully closed.
+        """
+        # If shutters were not open or doDiscard is forced, discard CCDs and stop the ramp.
         if not self.shutterState.wasOpen or doDiscard:
             self.clearExposure(cmd)
-        # note that when shutter command returns exposure won't be read because they are already cleared,
+
         if self.shutterState.isOpen:
+            # It the exposure was discarded, when the shutter command returns, the read command will be skipped.
+            # The finish operation only completes when the shutters are closed.
             self.exp.actor.safeCall(cmd, actor=self.enuName, cmdStr='exposure finish')
 
     def postWipeFunc(self):
