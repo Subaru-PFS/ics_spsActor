@@ -308,7 +308,7 @@ class Exposure(object):
         self.cmd = None
         self.pfsConfig = None
         self.pfsConfigPath = ''
-        self.pfsConfigFinalized = False
+        self.ingestPfsConfig = False
 
         self.doAbort = False
         self.doFinish = False
@@ -413,11 +413,11 @@ class Exposure(object):
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure."""
         # just call finish.
-        self.doAbort = True
+        #self.doAbort = True
         self.failures.add(reason)
 
-        for thread in self.threads:
-            thread.abort(cmd)
+        #for thread in self.threads:
+        #    thread.abort(cmd)
 
     def finish(self, cmd):
         """Finish current exposure."""
@@ -526,18 +526,18 @@ class Exposure(object):
         if doOverWritePfsConfig:
             overWritePfsConfig(pfsConfig, self.pfsConfigPath)
 
-        self.genPfsConfigFinalizedKey(self.cmd)
+        self.genIngestPfsConfigKey(self.cmd)
 
-    def genPfsConfigFinalizedKey(self, cmd, pfsConfigFinalized=True):
+    def genIngestPfsConfigKey(self, cmd):
         """Generate a key to declare that the PFS config is finalized and ready to be ingested."""
-        if not self.pfsConfigFinalized:
-            self.pfsConfigFinalized = pfsConfigFinalized
-            cmd.inform(f'pfsConfigFinalized={self.visit},{self.pfsConfigFinalized}')
+        if not self.ingestPfsConfig and self.pfsConfig is not None:
+            self.ingestPfsConfig = True
+            cmd.inform(f'ingestPfsConfig={self.visit:d},{qstr(self.pfsConfigPath)}')
 
     def exit(self):
         """Free up all resources."""
         # just declare it just in case.
-        self.genPfsConfigFinalizedKey(self.actor.bcast, pfsConfigFinalized=self.pfsConfig is not None)
+        self.genIngestPfsConfigKey(self.actor.bcast)
 
         for thread in self.threads:
             thread.exit()
@@ -576,4 +576,4 @@ class DarkExposure(Exposure):
     def loadPfsConfig(self):
         """Load pfsConfig and declare it finalized right away since bias/dark pfsConfig will not be updated."""
         Exposure.loadPfsConfig(self)
-        self.genPfsConfigFinalizedKey(self.cmd)
+        self.genIngestPfsConfigKey(self.cmd)
