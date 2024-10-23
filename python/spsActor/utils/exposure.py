@@ -1,6 +1,3 @@
-import glob
-import os
-
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
@@ -9,7 +6,6 @@ from ics.utils.opdb import opDB
 from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
-from pfs.datamodel.pfsConfig import PfsConfig, TargetType, FiberStatus
 from spsActor.utils import ccdExposure
 from spsActor.utils import hxExposure
 from spsActor.utils import iisControl
@@ -306,9 +302,6 @@ class Exposure(object):
         # force exptype == test.
         exptype = 'test' if doTest else exptype
         self.cmd = None
-        self.pfsConfig = None
-        self.pfsConfigPath = ''
-        self.ingestPfsConfig = False
 
         self.doAbort = False
         self.doFinish = False
@@ -335,8 +328,6 @@ class Exposure(object):
 
         self.failures = exception.Failures()
         self.smThreads = self.instantiate(cams)
-
-        reactor.callLater(1, self.loadPfsConfig)
 
     @property
     def camExp(self):
@@ -413,10 +404,10 @@ class Exposure(object):
     def abort(self, cmd, reason="ExposureAborted()"):
         """ Abort current exposure."""
         # just call finish.
-        #self.doAbort = True
+        # self.doAbort = True
         self.failures.add(reason)
 
-        #for thread in self.threads:
+        # for thread in self.threads:
         #    thread.abort(cmd)
 
     def finish(self, cmd):
@@ -455,90 +446,42 @@ class Exposure(object):
 
             # Finalize pfsConfig fiberStatus with respect to fibers illumination.
             if state == 'close':
-                reactor.callLater(1, self.updatePfsConfigFiberStatus)
+                reactor.callLater(1, self.genIlluminationStatus)
 
-    def loadPfsConfig(self):
-        """
-        Load the pfsConfig from the most recent raw data directory.
+    def genIlluminationStatus(self):
+        """Update pfsConfig fiberStatus using a single unsigned integer."""
 
-        The function first finds the path to the pfsConfig for the
-        current visit, and then reads the file using the PfsConfig._readImpl method.
-        The path and the pfsConfig are stored as attributes of the object.
-        """
+        fiberIllumination = 0  # Initialize an 8-bit integer (all bits set to 0).
 
-        def findPfsConfig(visit):
-            lastDate = max(glob.glob(os.path.join('/data/raw', '*/')), key=os.path.getmtime)
-            dirName = os.path.join(lastDate, 'pfsConfig')
-            [pfsConfigPath] = glob.glob(os.path.join(dirName, 'pfsConfig-*-%06d.fits' % visit))
-            return pfsConfigPath
-
-        self.pfsConfigPath = findPfsConfig(self.visit)
-        self.pfsConfig = PfsConfig._readImpl(self.pfsConfigPath)
-
-        self.actor.logger.info(f'Loading pfsConfig from {self.pfsConfigPath}')
-
-    def updatePfsConfigFiberStatus(self):
-        """Update pfsConfig fiberStatus."""
-
-        def overWritePfsConfig(pfsConfig, fileName):
-            os.chmod(fileName, 0o644)
-            pfsConfig.write(fileName=fileName)
-            self.actor.logger.info(f'{fileName} updated successfully !')
-            os.chmod(fileName, 0o444)
-
-        doOverWritePfsConfig = False
-
-        if not self.pfsConfig:
-            return
-
-        pfsConfig = self.pfsConfig
-
-        for specNum in range(1, 5):
+        for iSpec in range(4):
+            specNum = iSpec + 1
             specModule = [thread for thread in self.smThreads if thread.specNum == specNum]
 
-            # no data associated with this spectrograph module.
+            # No data associated with this spectrograph module.
             if not specModule:
-                pfsConfig.fiberStatus[pfsConfig.spectrograph == specNum] = FiberStatus.UNILLUMINATED
-                continue
+                continue  # Keep the 2 bits as 00 (already 0 by default).
 
-            [specModule] = specModule
+            [specModule] = specModule  # Unpack the single item from the list.
 
-            engFibers = ((pfsConfig.targetType == TargetType.ENGINEERING) *
-                         (pfsConfig.spectrograph == specModule.specNum) *
-                         (pfsConfig.fiberStatus == FiberStatus.GOOD))
+            # Default state: both bits set (11 in binary).
+            status = 3  # Both engineering and science fibers illuminated (11 in binary).
 
-            scienceFibers = ((pfsConfig.targetType != TargetType.ENGINEERING) *
-                             (pfsConfig.spectrograph == specModule.specNum) *
-                             (pfsConfig.fiberStatus == FiberStatus.GOOD))
+            # Checking engineering fibers illumination.
+            if not specModule.iisIlluminated():
+                status &= ~1  # Clear the least significant bit.
 
-            # checking engineering fibers illumination.
-            if not specModule.iisIlluminated() and self.doUpdateEngineeringFiberStatus:
-                pfsConfig.fiberStatus[engFibers] = FiberStatus.UNILLUMINATED
-                self.actor.logger.info('Engineering fiberStatus are set to UNILLUMINATED.')
-                doOverWritePfsConfig = True
+            # Checking science fibers illumination.
+            if not specModule.illuminated():
+                status &= ~2  # Clear the second bit.
 
-            # checking science fibers illumination.
-            if not specModule.illuminated() and self.doUpdateScienceFiberStatus:
-                pfsConfig.fiberStatus[scienceFibers] = FiberStatus.UNILLUMINATED
-                self.actor.logger.info('Science fiberStatus are set to UNILLUMINATED.')
-                doOverWritePfsConfig = True
+            # Shift the status by (iSpec * 2) bits and OR it into the fiberIllumination integer.
+            fiberIllumination |= (status << (iSpec * 2))
 
-        if doOverWritePfsConfig:
-            overWritePfsConfig(pfsConfig, self.pfsConfigPath)
-
-        self.genIngestPfsConfigKey(self.cmd)
-
-    def genIngestPfsConfigKey(self, cmd):
-        """Generate a key to declare that the PFS config is finalized and ready to be ingested."""
-        if not self.ingestPfsConfig and self.pfsConfig is not None:
-            self.ingestPfsConfig = True
-            cmd.inform(f'ingestPfsConfig={self.visit:d},{qstr(self.pfsConfigPath)}')
+        # Format the 8-bit integer as a binary string for display.
+        self.cmd.inform(f'fiberIllumination={self.visit},0x{fiberIllumination:02x}')
 
     def exit(self):
         """Free up all resources."""
-        # just declare it just in case.
-        self.genIngestPfsConfigKey(self.actor.bcast)
-
         for thread in self.threads:
             thread.exit()
 
@@ -572,8 +515,3 @@ class DarkExposure(Exposure):
     def instantiate(self, cams):
         """Create underlying CcdExposure threads object."""
         return [factory(self, cam) for cam in cams]
-
-    def loadPfsConfig(self):
-        """Load pfsConfig and declare it finalized right away since bias/dark pfsConfig will not be updated."""
-        Exposure.loadPfsConfig(self)
-        self.genIngestPfsConfigKey(self.cmd)
