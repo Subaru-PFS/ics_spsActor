@@ -361,14 +361,6 @@ class Exposure(object):
     def threads(self):
         return self.smThreads + self.lampsThreads
 
-    @property
-    def doUpdateEngineeringFiberStatus(self):
-        return self.actor.actorConfig['doUpdateEngineeringFiberStatus']
-
-    @property
-    def doUpdateScienceFiberStatus(self):
-        return self.actor.actorConfig['doUpdateScienceFiberStatus']
-
     def defineCCDControl(self, blueWindow, redWindow):
         """Update CCD wipe and read flavours based on windowing."""
         for arm, window in zip('br', [blueWindow, redWindow]):
@@ -444,12 +436,12 @@ class Exposure(object):
             if lightSource == 'pfi':
                 self.cmd.inform(f'pfiShutters={state}')
 
-            # Finalize pfsConfig fiberStatus with respect to fibers illumination.
+            # Generate fiberIllumination keyword, e.g. was IIS used etc...
             if state == 'close':
                 reactor.callLater(1, self.genIlluminationStatus)
 
     def genIlluminationStatus(self):
-        """Update pfsConfig fiberStatus using a single unsigned integer."""
+        """Generate fiberIllumination keyword using a single unsigned integer."""
 
         fiberIllumination = 0  # Initialize an 8-bit integer (all bits set to 0).
 
