@@ -168,7 +168,8 @@ class SyncCmd(object):
         """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
-
+        # hackity hack to control all BIA for this run.
+        specNums = [1, 2, 3, 4]
         power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
         period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
         duty = cmdKeys['duty'].values[0] if 'duty' in cmdKeys else None
@@ -183,6 +184,8 @@ class SyncCmd(object):
         """Switch multiple bia synchronously."""
         cmdKeys = cmd.cmd.keywords
         specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
+        # hackity hack to control all BIA for this run.
+        specNums = [1, 2, 3, 4]
         state = 'strobe off' if 'strobe' in cmdKeys else 'off'
 
         syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
