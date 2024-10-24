@@ -24,6 +24,7 @@ def getExposureInfo(filepath):
 class HxExposure(QThread):
     # timeout setting.
     """Placeholder to handle hxActor cmd threading."""
+    rampTimingOverhead = 15  # 5 sec has not proven to be long enough.
 
     def __init__(self, exp, cam):
         """Parameters
@@ -127,11 +128,9 @@ class HxExposure(QThread):
         dict: Contains start ramp time, max reset duration, max first read duration,
               max reset end time, and max first read end time.
         """
-        # empirically adding 5 seconds overhead.
-        overHead = 5
         startRamp = pfsTime.timestamp()
-        maxResetDuration = int(round(2 * self.readTime + overHead))
-        maxFirstReadDuration = int(round(3 * self.readTime + overHead))
+        maxResetDuration = int(round(2 * self.readTime + self.rampTimingOverhead))
+        maxFirstReadDuration = int(round(3 * self.readTime + self.rampTimingOverhead))
         maxResetEndTime = startRamp + maxResetDuration
         maxFirstReadEndTime = startRamp + maxFirstReadDuration
         return self.rampTiming.update(maxResetDuration=maxResetDuration, maxFirstReadDuration=maxFirstReadDuration,
