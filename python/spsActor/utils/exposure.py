@@ -1,6 +1,7 @@
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
+import spsActor.utils.metadata as metadata
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
 from ics.utils.threading import singleShot
@@ -11,7 +12,6 @@ from spsActor.utils import hxExposure
 from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
 from spsActor.utils import shutters
-from spsActor.utils.designId import getPfsDesignIdAndName
 from spsActor.utils.ids import SpsIds as idsUtils
 from twisted.internet import reactor
 
@@ -297,37 +297,34 @@ class Exposure(object):
 
     def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False, expTimeOverHead=0, **kwargs):
-        # save the actual exptype first
-        self.coreExpType = exptype
-        # force exptype == test.
-        exptype = 'test' if doTest else exptype
-        self.cmd = None
-
-        self.doAbort = False
-        self.doFinish = False
-        self.syncSpectrograph = actor.actorConfig['exposure']['doSyncSpectrograph']
-        self.expTimeOverHead = max(actor.actorConfig['exposure']['expTimeOverHead'], expTimeOverHead)
-        self.rampConfig = actor.actorConfig['exposure']['ramp']
-
-        self.didGenShutterKey = dict(open=False, close=False)
-
         self.actor = actor
         self.visit = visit
-        self.designId, self.designName = getPfsDesignIdAndName(visit)
-        self.exptype = exptype
+        self.coreExpType = exptype  # save the actual exptype first
+        self.exptype = 'test' if doTest else exptype  # force exptype == test if doTest
         self.exptime = exptime
-
-        # Define how ccds are wiped and read.
-        self.wipeFlavour = dict(b='', r='')
-        self.readFlavour = dict(b='', r='')
-
-        # IIS flag.
         self.doIIS = doIIS
-        # update ccd control if windowing is activated
-        self.defineCCDControl(blueWindow, redWindow)
+
+        # Define how ccds are wiped and read, for windowing purposes.
+        self.wipeFlavour, self.readFlavour = ccdExposure.CcdExposure.defineCCDControl(blueWindow, redWindow)
+
+        self.syncSpectrograph = self.exposureConfig['doSyncSpectrograph']
+        self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)
+        self.rampConfig = self.exposureConfig['ramp']
+
+        self.designId, self.designName = metadata.getPfsDesignIdAndName(visit,
+                                                                        doRaise=self.exposureConfig['raiseNoDesignId'])
+
+        self.cmd = None
+        self.doAbort = False
+        self.doFinish = False
+        self.didGenShutterKey = dict(open=False, close=False)
 
         self.failures = exception.Failures()
         self.smThreads = self.instantiate(cams)
+
+    @property
+    def exposureConfig(self):
+        return self.actor.actorConfig['exposure']
 
     @property
     def camExp(self):
@@ -360,16 +357,6 @@ class Exposure(object):
     @property
     def threads(self):
         return self.smThreads + self.lampsThreads
-
-    def defineCCDControl(self, blueWindow, redWindow):
-        """Update CCD wipe and read flavours based on windowing."""
-        for arm, window in zip('br', [blueWindow, redWindow]):
-            if not window:
-                continue
-
-            row0, nrows = window
-            self.wipeFlavour[arm] = 'nrows=0'
-            self.readFlavour[arm] = f'row0={row0} nrows={nrows}'
 
     def instantiate(self, cams):
         """Create underlying specModuleExposure threads."""
