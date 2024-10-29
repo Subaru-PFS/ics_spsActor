@@ -75,6 +75,22 @@ class CcdExposure(QThread):
     def specConfig(self):
         return self.exp.actor.spsConfig[f'sm{self.cam.specNum}']
 
+    @staticmethod
+    def defineCCDControl(blueWindow, redWindow):
+        """Update CCD wipe and read flavours based on windowing."""
+        wipeFlavour = dict(b='', r='')
+        readFlavour = dict(b='', r='')
+
+        for arm, window in zip('br', [blueWindow, redWindow]):
+            if not window:
+                continue
+
+            row0, nrows = window
+            wipeFlavour[arm] = 'nrows=0'
+            readFlavour[arm] = f'row0={row0} nrows={nrows}'
+
+        return wipeFlavour, readFlavour
+
     def exposureState(self, keyVar):
         """Exposure State callback."""
         state = keyVar.getValue(doRaise=False)

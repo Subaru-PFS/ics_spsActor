@@ -1,27 +1,6 @@
-import glob
 import logging
 
 from ics.utils.opdb import opDB
-from pfs.datamodel import PfsConfig
-
-
-def findDesignIdAndNameFromDisk(visitId):
-    """
-    Find the pfsDesignId and designName from the pfsConfig file on disk for a given visit ID.
-
-    Parameters
-    ----------
-    visitId : int
-        The visit ID for which to find the pfsDesignId and name.
-
-    Returns
-    -------
-    tuple
-        A tuple containing the pfsDesignId and name associated with the given visit ID.
-    """
-    [filepath] = glob.glob(f'/data/raw/*/pfsConfig/pfsConfig-*-{visitId:06d}.fits')
-    pfsConfig = PfsConfig._readImpl(filepath)
-    return pfsConfig.pfsDesignId, pfsConfig.designName
 
 
 def findDesignIdAndNameFromDB(visitId):
@@ -50,7 +29,7 @@ def findDesignIdAndNameFromDB(visitId):
     return int(pfsDesignId), designName
 
 
-def getPfsDesignIdAndName(visitId):
+def getPfsDesignIdAndName(visitId, doRaise=True):
     """
     Get the pfsDesignId and designName for a given visit ID.
 
@@ -77,12 +56,12 @@ def getPfsDesignIdAndName(visitId):
         pfsDesignId, designName = findDesignIdAndNameFromDB(visitId)
     except TypeError:
         # If no result is found in the database, try loading the configuration file from disk.
+        # EDIT 2024-10-24 pfsConfig file are now written when the shutter close, so there is no point checking the disk
+        # at the begging of the exposure.
+        if doRaise:
+            raise RuntimeError(f'could not find pfsDesignId for {visitId} !')
+
         logger = logging.getLogger('opdb')
-        logger.warning(f'Unable to find entry for pfs_config table with pfs_visitId={visitId}, trying from disk.')
-        try:
-            pfsDesignId, designName = findDesignIdAndNameFromDisk(visitId)
-        except ValueError:
-            # If neither method is successful, log a warning message.
-            logger.warning(f'Unable to find pfsConfig file matching pfs_visitId={visitId}')
+        logger.warning(f'Unable to find entry for pfs_config table with pfs_visitId={visitId}')
 
     return pfsDesignId, designName
