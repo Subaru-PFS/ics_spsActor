@@ -27,7 +27,7 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
         spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
-        expArgs = f'[<visit>] {spsArgs} [@doTest] [@doScienceCheck]'
+        expArgs = f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck]'
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -71,7 +71,11 @@ class ExposeCmd(object):
                                         keys.Key("redWindow", types.Int() * (1, 2),
                                                  help='first row, total number of rows to read on red arm'),
                                         keys.Key('slideSlit', types.Float() * (1, 2),
-                                                 help='pixels range(start, stop )')
+                                                 help='pixels range(start, stop )'),
+                                        keys.Key("metadata",
+                                                 types.Long(), types.String(), types.Int(), types.Int(), types.Int(),
+                                                 help='the metadata for the visit '
+                                                      '(designId, designName, visit0, sequenceId, groupId)'),
                                         )
 
     def doExposure(self, cmd):
@@ -102,6 +106,7 @@ class ExposeCmd(object):
         exptime = cmdKeys['exptime'].values[0] if exptype != 'bias' else 0
         visit = cmdKeys['visit'].values[0] if 'visit' in cmdKeys else self.actor.getVisit(cmd=cmd)
 
+        metadata = cmdKeys['metadata'].values if 'metadata' in cmdKeys else None
         doLamps = 'doLamps' in cmdKeys
         doShutterTiming = 'doShutterTiming' in cmdKeys
         doIIS = 'doIIS' in cmdKeys
@@ -127,7 +132,7 @@ class ExposeCmd(object):
             return
 
         self.process(cmd, visit,
-                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps,
+                     exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, metadata=metadata,
                      doShutterTiming=doShutterTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
                      blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange)
 

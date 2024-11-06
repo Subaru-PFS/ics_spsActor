@@ -295,13 +295,14 @@ class Exposure(object):
     """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
 
-    def __init__(self, actor, visit, exptype, exptime, cams, doIIS=False, doTest=False, blueWindow=False,
+    def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False, expTimeOverHead=0, **kwargs):
         self.actor = actor
         self.visit = visit
         self.coreExpType = exptype  # save the actual exptype first
         self.exptype = 'test' if doTest else exptype  # force exptype == test if doTest
         self.exptime = exptime
+        self.metadata = metadata
         self.doIIS = doIIS
 
         # Define how ccds are wiped and read, for windowing purposes.
@@ -311,8 +312,7 @@ class Exposure(object):
         self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)
         self.rampConfig = self.exposureConfig['ramp']
 
-        self.designId, self.designName = metadata.getPfsDesignIdAndName(visit,
-                                                                        doRaise=self.exposureConfig['raiseNoDesignId'])
+
 
         self.cmd = None
         self.doAbort = False
@@ -458,6 +458,21 @@ class Exposure(object):
 
         # Format the 8-bit integer as a binary string for display.
         self.cmd.inform(f'fiberIllumination={self.visit},0x{fiberIllumination:02x}')
+
+    def parsePfsDesign(self):
+        if not self.metadata:
+            return False
+
+        designId, designName, visit0, sequenceId, groupId = self.metadata
+        return f'0x{designId:016x},{qstr(designName)}'
+
+    def parseMetadata(self):
+        if not self.metadata:
+            return False
+
+        designId, designName, visit0, sequenceId, groupId = self.metadata
+        return ','.join(map(str, [visit0, sequenceId, groupId]))
+
 
     def exit(self):
         """Free up all resources."""
