@@ -1,7 +1,6 @@
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
-import spsActor.utils.metadata as metadata
 from actorcore.QThread import QThread
 from ics.utils.opdb import opDB
 from ics.utils.threading import singleShot
@@ -312,8 +311,6 @@ class Exposure(object):
         self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)
         self.rampConfig = self.exposureConfig['ramp']
 
-
-
         self.cmd = None
         self.doAbort = False
         self.doFinish = False
@@ -472,7 +469,6 @@ class Exposure(object):
 
         designId, designName, visit0, sequenceId, groupId = self.metadata
         return ','.join(map(str, [visit0, sequenceId, groupId]))
-
 
     def exit(self):
         """Free up all resources."""
