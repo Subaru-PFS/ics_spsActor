@@ -119,7 +119,7 @@ class CcdExposure(QThread):
         cmdParams = {self.exptype: True}
         cmdParams.update(**dict(visit=visit, exptime=exptime,
                                 pfsDesign=self.exp.parsePfsDesign(),
-                                metadata=self.exp.parseMetadata(),
+                                # metadata=self.exp.parseMetadata(),
                                 darktime=darktime, obstime=dateobs))
         # this is disgusting.
         if self.readFlavour:
