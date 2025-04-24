@@ -73,9 +73,13 @@ class ExposeCmd(object):
                                         keys.Key('slideSlit', types.Float() * (1, 2),
                                                  help='pixels range(start, stop )'),
                                         keys.Key("metadata",
-                                                 types.Long(), types.String(), types.Int(), types.Int(), types.Int(),
+                                                 types.Long(), types.String(),
+                                                 types.Int(), types.Int(), types.Int(),
+                                                 types.String(), types.String(), types.String(), types.String(),
                                                  help='the metadata for the visit '
-                                                      '(designId, designName, visit0, sequenceId, groupId)'),
+                                                      '(designId, designName, '
+                                                      'visit0, sequenceId, groupId,'
+                                                      'groupName, sequenceType, sequenceName, sequenceComments)'),
                                         )
 
     def doExposure(self, cmd):

@@ -460,15 +460,17 @@ class Exposure(object):
         if not self.metadata:
             return False
 
-        designId, designName, visit0, sequenceId, groupId = self.metadata
+        designId, designName, visit0, sequenceId, groupId, groupName, seqType, seqName, seqComments = self.metadata
         return f'0x{designId:016x},{qstr(designName)}'
 
     def parseMetadata(self):
         if not self.metadata:
             return False
 
-        designId, designName, visit0, sequenceId, groupId = self.metadata
-        return ','.join(map(str, [visit0, sequenceId, groupId]))
+        designId, designName, visit0, sequenceId, groupId, groupName, seqType, seqName, seqComments = self.metadata
+        ids = list(map(str, [visit0, sequenceId, groupId]))
+        descriptions = [qstr(groupName), qstr(seqType), qstr(seqName), qstr(seqComments)]
+        return ','.join(ids + descriptions)
 
     def exit(self):
         """Free up all resources."""
