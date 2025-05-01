@@ -240,7 +240,7 @@ class HxExposure(QThread):
         """Send h4 ramp command and handle reply."""
         cmdParams = dict(nread=self.nRead0, visit=self.exp.visit,
                          pfsDesign=self.exp.parsePfsDesign(),
-                         # metadata=self.exp.parseMetadata(),
+                         metadata=self.exp.parseMetadata(),
                          exptype=self.exptype)
         if expectedExptime:
             cmdParams["expectedExptime"] = expectedExptime
