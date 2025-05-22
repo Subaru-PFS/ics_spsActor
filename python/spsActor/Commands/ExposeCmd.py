@@ -27,7 +27,7 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
         spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
-        expArgs = f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck]'
+        expArgs = f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck] [@skipBiaCheck]'
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -98,6 +98,22 @@ class ExposeCmd(object):
 
             return not len(notInHome)
 
+        def biaIsOff(cams, cmd):
+            """Return True if all bia are off."""
+            biaOn = []
+
+            for specNum in set([cam.specNum for cam in cams]):
+                biaStatus = self.actor.models[f'enu_sm{specNum}'].keyVarDict['bia'].getValue()
+
+                if biaStatus != 'off':
+                    biaOn.append(f'sm{specNum}')
+
+            if biaOn:
+                cmd.fail(
+                    f'text="Cannot proceed: BIA is ON for spectrographs {", ".join(biaOn)}. Please turn off before retrying."')
+
+            return not len(biaOn)
+
         cmdKeys = cmd.cmd.keywords
         cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
@@ -116,6 +132,7 @@ class ExposeCmd(object):
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
         doScienceCheck = 'doScienceCheck' in cmdKeys
+        doBiaCheck = 'skipBiaCheck' not in cmdKeys
         doSlideSlit = 'slideSlit' in cmdKeys
         slideSlitPixelRange = cmdKeys['slideSlit'].values if doSlideSlit else False
 
@@ -133,6 +150,10 @@ class ExposeCmd(object):
 
         # science check boils down to checking slit position right now, but more to come.
         if doScienceCheck and not slitInHome(cams, cmd=cmd):
+            return
+
+        # check that bia is off before exposing.
+        if doBiaCheck and not biaIsOff(cams, cmd):
             return
 
         self.process(cmd, visit,
