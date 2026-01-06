@@ -2,7 +2,6 @@ import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
-from ics.utils.opdb import opDB
 from ics.utils.threading import threaded
 from spsActor.utils.ids import SpsIds as idsUtils
 
@@ -224,14 +223,12 @@ class CcdExposure(QThread):
         # convert timestamp to datetime object.
         time_exp_end = pfsTime.Time.fromtimestamp(self.time_exp_end).to_datetime()
 
-        try:
-            opDB.insert('sps_exposure',
-                        pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
-                        time_exp_start=time_exp_start, time_exp_end=time_exp_end,
-                        beam_config_date=float(beamConfigDate))
-            return cam.camName
-        except Exception as e:
-            self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
+        self.actor.insert('sps_exposure',
+                          pfs_visit_id=int(visit), sps_camera_id=int(cam.camId), exptime=float(self.exptime),
+                          time_exp_start=time_exp_start, time_exp_end=time_exp_end,
+                          beam_config_date=float(beamConfigDate))
+
+        return cam.camName
 
     def abort(self, cmd):
         """ Just a prototype. """
