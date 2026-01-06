@@ -5,7 +5,6 @@ import ics.utils.time as pfsTime
 import numpy as np
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
-from ics.utils.opdb import opDB
 from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from spsActor.utils.ids import SpsIds as idsUtils
@@ -327,14 +326,11 @@ class HxExposure(QThread):
         # invalid for now
         beamConfigDate = 9998.0
 
-        try:
-            opDB.insert('sps_exposure',
-                        pfs_visit_id=int(visit), sps_camera_id=cam.camId, exptime=self.exptime,
-                        time_exp_start=time_exp_start, time_exp_end=time_exp_end,
-                        beam_config_date=float(beamConfigDate))
-            return cam.camName
-        except Exception as e:
-            self.actor.bcast.warn('text=%s' % self.actor.strTraceback(e))
+        self.actor.insert('sps_exposure',
+                          pfs_visit_id=int(visit), sps_camera_id=int(cam.camId), exptime=float(self.exptime),
+                          time_exp_start=time_exp_start, time_exp_end=time_exp_end,
+                          beam_config_date=float(beamConfigDate))
+        return cam.camName
 
     def handleTimeout(self):
         """Just a prototype."""

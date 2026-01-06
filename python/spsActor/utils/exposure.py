@@ -2,7 +2,6 @@ import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
-from ics.utils.opdb import opDB
 from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
@@ -481,10 +480,7 @@ class Exposure(object):
 
     def store(self, cmd, visit):
         """Store Exposure in sps_visit table in opdb database."""
-        try:
-            opDB.insert('sps_visit', pfs_visit_id=visit, exp_type=self.exptype)
-        except Exception as e:
-            cmd.warn('text=%s' % self.actor.strTraceback(e))
+        self.actor.insert('sps_visit', pfs_visit_id=int(visit), exp_type=str(self.exptype), cmd=cmd)
 
         frames = [camExp.store() for camExp in self.camExp]
         return list(filter(None, frames))
