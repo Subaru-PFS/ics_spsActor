@@ -5,7 +5,6 @@ import logging
 import time
 
 import actorcore.ICC
-import pandas as pd
 from ics.utils.sps.config import SpsConfig
 from ics.utils.sps.spectroIds import getSite
 from pfs.utils.database import opdb
@@ -103,10 +102,9 @@ class SpsActor(actorcore.ICC.ICC):
 
     def insert(self, table, cmd=None, **kwargs):
         cmd = self.bcast if cmd is None else cmd
-        df = pd.DataFrame(dict([(k, [v]) for k, v in kwargs.items()]))
 
         try:
-            self.opdb.insert_dataframe(table, df=df)
+            self.opdb.insert_kw(table, **kwargs)
         except Exception as e:
             cmd.warn('text=%s' % self.strTraceback(e))
 
