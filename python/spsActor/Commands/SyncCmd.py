@@ -20,7 +20,7 @@ class SyncCmd(object):
         spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
         self.vocab = [
             ('slit', f'<focus> [@(microns)] [@(abs)] {spsArgs}', self.slitFocus),
-            ('slit', f'dither [<x>] [<y>] [@(pixels|microns)] [@(abs)] {spsArgs}', self.slitDither),
+            ('slit', f'dither [<x>] [<y>] [<focus>] [@(pixels|microns)] [@(abs)] {spsArgs}', self.slitDither),
             ('slit', f'home {spsArgs}', self.slitHome),
             ('slit', f'start {spsArgs}', self.slitStart),
             ('slit', f'stop {spsArgs}', self.slitStop),
@@ -112,12 +112,13 @@ class SyncCmd(object):
 
         ditherX = cmdKeys['x'].values[0] if 'x' in cmdKeys else None
         ditherY = cmdKeys['y'].values[0] if 'y' in cmdKeys else None
+        focus = cmdKeys['focus'].values[0] if 'focus' in cmdKeys else None
         microns = 'microns' in cmdKeys
         pixels = 'pixels' in cmdKeys
         abs = 'abs' in cmdKeys
 
         syncCmd = sync.SlitMove(self.actor, specNums=specNums, cmdHead='dither',
-                                x=ditherX, y=ditherY, microns=microns, pixels=pixels, abs=abs)
+                                x=ditherX, y=ditherY, focus=focus, microns=microns, pixels=pixels, abs=abs)
         syncCmd.process(cmd)
 
     @singleShot
