@@ -225,10 +225,10 @@ class SpecModuleExposure(QThread):
 
         if self.exp.exptype in ['arc', 'flat']:
             # DCB model can be trusted I think.
-            if self.lightSource.useDcbActor:
+            if self.lightSource.useDcbActor or self.lightSource == 'pfi':
                 lampKeyVarDict = self.actor.models[self.lightSource.lampsActor].keyVarDict
                 return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, lampKeyVarDict)
-            elif self.lightSource == 'pfi':
+                # elif self.lightSource == 'pfi':
                 # illuminated = False // this caused some confusion in december 2023 run (hgcd...)
                 #  I think considering illuminated = True for pfi is the right answer.
                 pass

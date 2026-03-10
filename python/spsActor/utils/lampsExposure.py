@@ -33,7 +33,7 @@ class SpecModuleExposure(exposure.SpecModuleExposure):
         # consider illuminated by default.
         illuminated = True
 
-        if self.lightSource.useDcbActor:
+        if self.lightSource.useDcbActor or self.lightSource == 'pfi':
             lampKeyVarDict = self.actor.models[self.lightSource.lampsActor].keyVarDict
             return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, lampKeyVarDict)
 
@@ -52,7 +52,7 @@ class Exposure(exposure.Exposure):
     LampControlClass = lampsControl.LampsControl
 
     def __init__(self, *args, doLamps=True, **kwargs):
-        exposure.Exposure.__init__(self, *args,  **kwargs)
+        exposure.Exposure.__init__(self, *args, **kwargs)
         self.doIIS = False
         self.syncSpectrograph = True
         [lightSource] = list(set(th.lightSource for th in self.smThreads))
