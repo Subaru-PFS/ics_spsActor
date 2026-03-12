@@ -22,7 +22,7 @@ class SyncCmd(object):
             ('slit', f'<focus> [@(microns)] [@(abs)] {spsArgs}', self.slitFocus),
             ('slit', f'dither [<x>] [<y>] [<focus>] [@(pixels|microns)] [@(abs)] {spsArgs}', self.slitDither),
             ('slit', f'home {spsArgs}', self.slitHome),
-            ('slit', f'start {spsArgs}', self.slitStart),
+            ('slit', f'start [@(fullInit)] {spsArgs}', self.slitStart),
             ('slit', f'stop {spsArgs}', self.slitStop),
 
             ('rda', f'@moveTo @(low|med) {spsArgs}', self.rdaMove),
@@ -136,7 +136,9 @@ class SyncCmd(object):
         cmdKeys = cmd.cmd.keywords
         specNums = self.actor.spsConfig.keysToSpecNum(cmdKeys)
 
-        syncCmd = sync.SlitStart(self.actor, specNums=specNums)
+        fullInit = 'fullInit' in cmdKeys
+
+        syncCmd = sync.SlitStart(self.actor, specNums=specNums, fullInit=fullInit)
         syncCmd.process(cmd)
 
     @singleShot

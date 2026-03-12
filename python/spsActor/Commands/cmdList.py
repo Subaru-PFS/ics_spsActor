@@ -23,9 +23,10 @@ class SlitMove(sync.SpsCmd):
 class SlitStart(sync.SpsCmd):
     timeLim = 120
 
-    def __init__(self, spsActor, specNums):
+    def __init__(self, spsActor, specNums, fullInit=False, **kwargs):
         sync.SpsCmd.__init__(self, spsActor)
-        self.attachThreads([SlitStartCmd(self, specNum, 'slit start', SlitStart.timeLim) for specNum in specNums])
+        cmdStr = cmdUtils.parse(f'slit start', fullInit=fullInit, **kwargs)
+        self.attachThreads([SlitStartCmd(self, specNum, cmdStr, SlitStart.timeLim) for specNum in specNums])
 
 
 class SlitStop(sync.SpsCmd):
