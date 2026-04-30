@@ -7,7 +7,6 @@ from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
 from spsActor.utils import ccdExposure
 from spsActor.utils import hxExposure
-from spsActor.utils import iisControl
 from spsActor.utils import lampsControl
 from spsActor.utils import shutters
 from spsActor.utils.ids import SpsIds as idsUtils
@@ -46,12 +45,6 @@ class SpecModuleExposure(QThread):
         self.shutterState = shutters.ShutterState(self)
         self.enuKeyVarDict['shutters'].addCallback(self.shutterState.callback)
 
-        # instantiate IIS control if required.
-        if self.doControlIIS:
-            self.iisControl = iisControl.IISControl(self.exp, self.enuName)
-        else:
-            self.iisControl = None
-
         self.start()
 
     @property
@@ -75,10 +68,6 @@ class SpecModuleExposure(QThread):
         for camExp in self.camExp:
             if isinstance(camExp, hxExposure.HxExposure):
                 return camExp
-
-    @property
-    def doControlIIS(self):
-        return self.exp.doIIS
 
     @property
     def runExp(self):
@@ -201,9 +190,9 @@ class SpecModuleExposure(QThread):
         """Callback called whenenever shutters are opened."""
         self.exp.genShutterKey('open', lightSource=self.specConfig.lightSource)
 
-        # fire IIS is required.
-        if self.doControlIIS:
-            self.iisControl.goSignal = True
+        # fire central IIS once every shutter is opened.
+        if self.exp.doIIS and all([thread.shutterState.isOpen for thread in self.exp.smThreads]):
+            self.exp.iisLampsThread.goSignal = True
 
     def shuttersCloseCB(self):
         """Callback called whenenever shutters are closed after the exposure."""
@@ -215,8 +204,8 @@ class SpecModuleExposure(QThread):
 
     def iisIlluminated(self):
         """Check if iis was illuminated during that visit."""
-        # enuKeyVarDict and lampKeyVarDict are the same for IIS.
-        return iisControl.IISControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, self.enuKeyVarDict)
+        iisKeyVarDict = self.actor.models['iis'].keyVarDict
+        return lampsControl.LampsControl.checkIllumination(self.exp.visit, self.enuKeyVarDict, iisKeyVarDict)
 
     def illuminated(self):
         """Check if science fibers are illuminated."""
@@ -316,6 +305,9 @@ class Exposure(object):
         self.didGenShutterKey = dict(open=False, close=False)
 
         self.failures = exception.Failures()
+        # central IIS lamp thread, instantiated once for the whole exposure.
+        self.iisLampsThread = lampsControl.LampsControl(self, lampsActor='iis',
+                                                        threadName='iisControl') if doIIS else None
         self.smThreads = self.instantiate(cams)
 
     @property
@@ -344,7 +336,7 @@ class Exposure(object):
 
     @property
     def iisThreads(self):
-        return list(filter(None, [smThread.iisControl for smThread in self.smThreads]))
+        return [self.iisLampsThread] if self.iisLampsThread is not None else []
 
     @property
     def lampsThreads(self):

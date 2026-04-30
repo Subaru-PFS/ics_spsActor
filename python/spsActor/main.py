@@ -96,7 +96,7 @@ class SpsActor(actorcore.ICC.ICC):
 
     def connectionMade(self):
         if self.everConnected is False:
-            self.requireModels(['gen2'])
+            self.requireModels(['gen2', 'iis'])
             self.reloadConfiguration(self.bcast)
             self.everConnected = True
 
