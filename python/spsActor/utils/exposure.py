@@ -133,7 +133,7 @@ class SpecModuleExposure(QThread):
     def integrate(self, cmd, shutterTime=None):
         """Integrate for both calib and regular exposure."""
         # exposure time can have some overhead.
-        shutterTime = self.exp.exptime if shutterTime is None else shutterTime
+        shutterTime = self.exp.exptime + self.exp.iisShutterOverHead if shutterTime is None else shutterTime
 
         shutterMask = self.shutterMask()
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
@@ -281,6 +281,10 @@ class SpecModuleExposure(QThread):
 class Exposure(object):
     """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
+    # Front-edge bumper for the IIS pulse: shutters open this many seconds before the
+    # pulse to absorb the iisActor go-cmd round-trip. Trailing edge is handled by
+    # LampsControl.start calling exp.finish(cmd) once the pulse returns.
+    iisGoMargin = 5
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False, expTimeOverHead=0, **kwargs):
@@ -308,6 +312,8 @@ class Exposure(object):
         # central IIS lamp thread, instantiated once for the whole exposure.
         self.iisLampsThread = lampsControl.LampsControl(self, lampsActor='iis',
                                                         threadName='iisControl') if doIIS else None
+        # safety bumper widening the shutter window when iis is firing; 0 otherwise.
+        self.iisShutterOverHead = Exposure.iisGoMargin if doIIS else 0
         self.smThreads = self.instantiate(cams)
 
     @property
