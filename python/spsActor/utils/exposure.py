@@ -284,7 +284,7 @@ class Exposure(object):
     # Front-edge bumper for the IIS pulse: shutters open this many seconds before the
     # pulse to absorb the iisActor go-cmd round-trip. Trailing edge is handled by
     # LampsControl.start calling exp.finish(cmd) once the pulse returns.
-    iisGoMargin = 5
+    iisGoMargin = 10
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False, expTimeOverHead=0, **kwargs):
