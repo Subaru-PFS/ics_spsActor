@@ -53,7 +53,6 @@ class Exposure(exposure.Exposure):
 
     def __init__(self, *args, doLamps=True, **kwargs):
         exposure.Exposure.__init__(self, *args, **kwargs)
-        self.doIIS = False
         self.syncSpectrograph = True
         [lightSource] = list(set(th.lightSource for th in self.smThreads))
         # always True, convenience added just for the IIS drift flats.
