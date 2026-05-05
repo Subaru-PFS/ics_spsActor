@@ -30,6 +30,8 @@ class SyncCmd(object):
             ('bia', f'@on [strobe] [<power>] [<duty>] [<period>] {spsArgs}', self.biaSwitchOn),
             ('bia', f'@off {spsArgs}', self.biaSwitchOff),
             ('bia', f'@strobe @off {spsArgs}', self.biaSwitchOff),
+            ('bia', '@callbackOn [strobe] [<power>] [<duty>] [<period>]', self.biaCallbackOn),
+            ('bia', '@callbackOff', self.biaCallbackOff),
 
             ('iis', f'<on> [<warmingTime>] {spsArgs}', self.iisOn),
             ('iis', f'<off> {spsArgs}', self.iisOff),
@@ -192,6 +194,25 @@ class SyncCmd(object):
         state = 'strobe off' if 'strobe' in cmdKeys else 'off'
 
         syncCmd = sync.BiaSwitch(self.actor, state=state, specNums=specNums)
+        syncCmd.process(cmd)
+
+    @singleShot
+    def biaCallbackOn(self, cmd):
+        """Propagate bia callbackOn to enu_sm1-4."""
+        cmdKeys = cmd.cmd.keywords
+        power = cmdKeys['power'].values[0] if 'power' in cmdKeys else None
+        period = cmdKeys['period'].values[0] if 'period' in cmdKeys else None
+        duty = cmdKeys['duty'].values[0] if 'duty' in cmdKeys else None
+        strobe = 'strobe' in cmdKeys
+
+        syncCmd = sync.BiaSwitch(self.actor, state='callbackOn', specNums=[1, 2, 3, 4],
+                                 strobe=strobe, power=power, period=period, duty=duty)
+        syncCmd.process(cmd)
+
+    @singleShot
+    def biaCallbackOff(self, cmd):
+        """Propagate bia callbackOff to enu_sm1-4."""
+        syncCmd = sync.BiaSwitch(self.actor, state='callbackOff', specNums=[1, 2, 3, 4])
         syncCmd.process(cmd)
 
     @singleShot
