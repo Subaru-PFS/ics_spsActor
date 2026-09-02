@@ -1,6 +1,6 @@
 setupRequired(tron_actorcore)
-setupRequired(ics_actorkeys)
-setupRequired(pfs_instdata)
+setupRequired(ics_actorkeys INSTRM-2968)
+setupRequired(pfs_instdata INSTRM-2968)
 setupRequired(pfs_utils)
 setupRequired(datamodel)
 
