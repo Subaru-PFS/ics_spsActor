@@ -160,6 +160,23 @@ class Sim(object):
 
         return False
 
+    def onKeyVar(self, actor, key, value, func):
+        """Call func() the first time that keyVar takes the given value.
+
+        Nothing is sent while the shutters are open, so a command hook cannot reach the
+        middle of an integration; a keyword transition can.
+        """
+        fired = []
+
+        def callback(keyVar):
+            if fired or keyVar.getValue(doRaise=False) != value:
+                return
+
+            fired.append(True)
+            func()
+
+        self.models[actor].keyVarDict[key].addCallback(callback)
+
     def sent(self, actor=None, cmdHead=None):
         """Return the commands sent, filtered by actor and by command head."""
         return [(at, sentTo, cmdStr) for at, sentTo, cmdStr in self.transcript

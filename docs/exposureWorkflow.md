@@ -274,7 +274,7 @@ The difference that matters: **finish keeps the data, abort discards it** — bu
 
 `sps exposure abort` and `sps exposure finish` both call `Exposure.finish`
 ([ExposeCmd.py:226-254](../python/spsActor/Commands/ExposeCmd.py#L226-L254)); only the
-reply text differs. The abort marks the exposure as ending its illuminator runs first.
+reply text differs, and both mark the exposure as ending its illuminator runs.
 
 ## 8. Releasing the illuminators
 
@@ -285,20 +285,27 @@ therefore has to say when a lamp run is over.
 
 ```mermaid
 flowchart TD
-    A["shutters close"] --> S["stopIlluminators"]
-    B["Exposure.abort"] --> S
-    C["Exposure.finish with no shutter ever opened"] --> S
+    Close["the shutters close<br/>on their own"] --> Q1
+    Ext["sps exposure abort<br/>or sps exposure finish"] --> Force
+    Fail["a failure in any thread"] --> Force
+    Force["isLast = True<br/>nothing more will be exposed"] --> Q1
 
-    S --> Q{"was the go sent?"}
-    Q -->|"no"| Skip["nothing to release"]
-    Q -->|"yes"| W{"does its run end here?"}
+    Q1{"was the go sent?"} -->|"no"| Skip["nothing to release"]
+    Q1 -->|"yes"| Q2{"does this run end here?"}
 
-    W -->|"isLast"| Send["stop"]
-    W -->|"lamps outlive the shutter"| Send
-    W -->|"otherwise"| Wait["leave it burning"]
+    Q2 -->|"isLast"| Send["stop"]
+    Q2 -->|"lamps outlive the shutter"| Send
+    Q2 -->|"a later exposure of a<br/>backgrounded run needs it"| Keep["leave it burning"]
 
     Send --> Latch["at most once per actor per exposure"]
 ```
+
+The ways in are not equivalent, and the difference is the whole rule. Everything except a
+shutter closing on its own — commanded or failed — **settles the question before asking
+it**: nothing more will be exposed, so the run is declared over and the only branch left
+is *stop*. Exactly one route can decide to leave a lamp burning, for exactly one reason:
+the shutters closed normally on an exposure that is not the last of a backgrounded run,
+and the next exposure still needs the light.
 
 Two sources feed it: the threads the exposure drives itself, and the actors named in
 `bckIlluminators`, which the iic sequence lit before the exposure existed. The first are

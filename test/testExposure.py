@@ -111,6 +111,16 @@ def knownGap(reason):
     return decorate
 
 
+def whileIntegrating(what, specName='sm1', visit=1):
+    """Arm an `sps exposure abort|finish` to land while the shutters are open."""
+
+    def inject(sim, cmdSet):
+        sim.onKeyVar(f'enu_{specName}', 'shutters', 'open',
+                     lambda: cmdSet.call(f'exposure {what} visit={visit}'))
+
+    return inject
+
+
 def failAt(actor, at):
     """Arm a device failure at a named point."""
 
@@ -286,10 +296,30 @@ def test_abort_of_a_backgrounded_run_releases_it():
     assert res.stopped('pfilamps') == 1, 'backgrounded run left burning after an abort'
 
 
-def test_finish_during_integration_keeps_the_data():
-    res = expose(f'expose object exptime=20 cams=b1 visit=1 isLast',
-                 inject=finishAt('ccd_b1', 'read'))
+def test_finish_during_integration_cuts_it_short_and_keeps_the_data():
+    res = expose('expose object exptime=20 cams=b1 visit=1 isLast',
+                 inject=whileIntegrating('finish'))
+    assert res.sent('enu_sm1', 'exposure finish'), 'the shutters were never told to close'
     assert res.fileIds, 'early finish discarded the data'
+
+    [read] = res.sent('ccd_b1', 'read')
+    exptime = float(read.split('exptime=')[1].split()[0])
+    assert exptime < 5, f'shutters stayed open for {exptime}s of a 20s exposure'
+
+
+def test_abort_during_integration_discards_nothing_already_exposed():
+    res = expose('expose object exptime=20 cams=b1 visit=1 isLast',
+                 inject=whileIntegrating('abort'))
+    assert res.sent('enu_sm1', 'exposure finish'), 'the shutters were never told to close'
+    assert res.sent('ccd_b1', 'read'), 'photons had landed, yet the data was discarded'
+
+
+def test_finishing_a_backgrounded_run_releases_it():
+    """An exposure finished by hand or by the sequence is the end of that run: iic concludes
+    the sequence on a finishNow, so nothing later will use the lamps."""
+    res = expose('expose arc exptime=20 cams=b1 visit=1 bckIlluminators=pfilamps',
+                 prepare=dict(pfilamps=dict(hgcd=30)), inject=whileIntegrating('finish'))
+    assert res.stopped('pfilamps') == 1, 'backgrounded run left burning after an early finish'
 
 
 def test_abort_during_integration_releases_the_lamps():

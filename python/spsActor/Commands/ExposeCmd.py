@@ -250,6 +250,8 @@ class ExposeCmd(object):
             cmd.fail(f'text="visit:{visit} is not ongoing, valids:{",".join(map(str, self.exp.keys()))} "')
             return
 
+        # finishing an exposure by hand ends it, so no illuminator run outlives this one.
+        exposure.isLast = True
         exposure.finish(cmd)
         cmd.finish('text="exposure finalizing now..."')
 
