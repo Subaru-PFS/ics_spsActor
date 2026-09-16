@@ -84,6 +84,16 @@ class Sim(object):
         cmdStr = ' '.join([f'{lamp}={onTime}' for lamp, onTime in onTimes.items()])
         return self.crudeCall(self.bcast, actor=name, cmdStr=f'prepare {cmdStr}')
 
+    def backgroundLamps(self, name, **onTimes):
+        """Light a run that outlives the exposure, as the iic sequence does for hgcd.
+
+        prepare, then go noWait: the lamps are burning before the first exposure of the
+        set is even commanded, which is what makes them nobody's to stop but the last.
+        """
+        self.prepareLamps(name, **onTimes)
+        self.crudeCall(self.bcast, actor=name, cmdStr='waitForReadySignal')
+        return self.crudeCall(self.bcast, actor=name, cmdStr='go noWait')
+
     # -- the interface spsActor.main.SpsActor provides ------------------------------------
 
     def crudeCall(self, cmd, actor, cmdStr, timeLim=60, **kwargs):

@@ -290,7 +290,8 @@ therefore has to say when a lamp run is over.
 flowchart TD
     Close["the shutters close<br/>on their own"] --> Q1
     Ext["sps exposure abort<br/>or sps exposure finish"] --> Force
-    Fail["a thread failure that<br/>aborts the exposure"] --> Force
+    Fail["a thread failure<br/>that aborts"] --> Force
+    Rep["the exposure is reported<br/>as failed"] --> Force
     Force["isLast = True<br/>nothing more will be exposed"] --> Q1
 
     Q1{"was the go sent?"} -->|"no"| Skip["nothing to release"]
@@ -310,10 +311,13 @@ is *stop*. Exactly one route can decide to leave a lamp burning, for exactly one
 the shutters closed normally on an exposure that is not the last of a backgrounded run,
 and the next exposure still needs the light.
 
-Note which failures reach this at all. A failure late enough to keep its data never calls
-`Exposure.abort`, so it never declares the run over — it arrives here, if at all, by the
-shutters closing behind it. That is why an enu failing with its shutters open leaves the
-lamps burning; see [section 10](#10-checking-a-change).
+The last route is the one that catches everything else. A failure late enough to keep its
+data never calls `Exposure.abort`, so it would otherwise never declare the run over — an
+enu dying with its shutters open, a read that fails, an H4 ramp that fails after its first
+read. But the exposure is still *reported* as a failure, and iic cancels the rest of the
+set when it is, so the exposure that would have carried `isLast` never runs. Ending the
+run when the failure is reported is what stops a backgrounded HgCd burning out its
+remaining prepare time with nothing left to light.
 
 Two sources feed it: the threads the exposure drives itself, and the actors named in
 `bckIlluminators`, which the iic sequence lit before the exposure existed. The first are

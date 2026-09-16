@@ -45,7 +45,8 @@ class Result(object):
         return matched[0][0] if matched else None
 
 
-def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, inject=None, timeout=60):
+def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, background=None, inject=None,
+           timeout=60):
     """Run one exposure against a fresh simulated spectrograph.
 
     Parameters
@@ -54,6 +55,9 @@ def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, inject=None, 
         the `sps expose ...` command to send.
     prepare : `dict`
         lamp on-times to prepare beforehand, keyed by lamp actor.
+    background : `dict`
+        lamp on-times to prepare *and fire* beforehand, keyed by lamp actor: a run already
+        burning when the exposure starts, as the iic sequence leaves it for hgcd.
     inject : callable
         called with (sim, cmdSet) before the exposure starts, to arm an injection.
     """
@@ -62,6 +66,9 @@ def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, inject=None, 
 
     for lampsActor, onTimes in (prepare or dict()).items():
         sim.prepareLamps(lampsActor, **onTimes)
+
+    for lampsActor, onTimes in (background or dict()).items():
+        sim.backgroundLamps(lampsActor, **onTimes)
 
     if inject is not None:
         inject(sim, cmdSet)
@@ -191,14 +198,14 @@ def test_shutter_timed_lamps_are_cut_every_exposure():
 
 def test_backgrounded_lamps_survive_until_the_last_exposure():
     res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 bckIlluminators=pfilamps',
-                 prepare=dict(pfilamps=dict(hgcd=30)))
+                 background=dict(pfilamps=dict(hgcd=30)))
     assert res.fileIds, 'no file produced'
     assert res.stopped('pfilamps') == 0, 'cut a backgrounded run short'
 
 
 def test_backgrounded_lamps_released_on_the_last_exposure():
     res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 bckIlluminators=pfilamps isLast',
-                 prepare=dict(pfilamps=dict(hgcd=30)))
+                 background=dict(pfilamps=dict(hgcd=30)))
     assert res.fileIds, 'no file produced'
     assert res.stopped('pfilamps') == 1, 'backgrounded run never released'
 
@@ -206,11 +213,11 @@ def test_backgrounded_lamps_released_on_the_last_exposure():
 def test_mixed_runs_end_independently():
     """iis is pulsed per exposure while pfilamps is backgrounded across the sequence."""
     notLast = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 doIIS bckIlluminators=pfilamps',
-                     prepare=dict(pfilamps=dict(hgcd=30), iis=dict(halogen=0.1)))
+                     background=dict(pfilamps=dict(hgcd=30)), prepare=dict(iis=dict(halogen=0.1)))
     assert notLast.stopped('pfilamps') == 0, 'cut the backgrounded run short'
 
     last = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 doIIS bckIlluminators=pfilamps isLast',
-                  prepare=dict(pfilamps=dict(hgcd=30), iis=dict(halogen=0.1)))
+                  background=dict(pfilamps=dict(hgcd=30)), prepare=dict(iis=dict(halogen=0.1)))
     assert last.stopped('pfilamps') == 1, 'backgrounded run never released'
     assert last.stopped('iis') == 1, 'iis never released'
 
@@ -256,9 +263,9 @@ def test_shutter_failure_after_opening_keeps_the_data():
     assert res.cmd.didFail, 'the shutter failure was not reported'
 
 
-@knownGap('the enu leaves the shutters open when it fails mid-exposure, so no close ever comes, '
-          'and reading the data is not an abort either: nothing ends the illuminator run')
 def test_shutter_failure_after_opening_releases_the_lamps():
+    """The enu leaves its shutters open when it fails mid-exposure, so no close ever comes
+    and reading the data is not an abort: only the reported failure ends the run."""
     res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 doLamps isLast',
                  prepare=dict(pfilamps=dict(neon=EXPTIME)),
                  inject=failAt('enu_sm1', 'shutters expose, after opening'))
@@ -292,7 +299,7 @@ def test_abort_before_shutters_open_still_releases_a_lit_lamp():
 
 def test_abort_of_a_backgrounded_run_releases_it():
     res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 bckIlluminators=pfilamps',
-                 prepare=dict(pfilamps=dict(hgcd=30)), inject=abortAt('ccd_b1', 'wipe'))
+                 background=dict(pfilamps=dict(hgcd=30)), inject=abortAt('ccd_b1', 'wipe'))
     assert res.stopped('pfilamps') == 1, 'backgrounded run left burning after an abort'
 
 
@@ -312,6 +319,17 @@ def test_abort_during_integration_discards_nothing_already_exposed():
                  inject=whileIntegrating('abort'))
     assert res.sent('enu_sm1', 'exposure finish'), 'the shutters were never told to close'
     assert res.sent('ccd_b1', 'read'), 'photons had landed, yet the data was discarded'
+
+
+def test_a_late_failure_mid_set_releases_the_backgrounded_run():
+    """A read failure keeps its data and never aborts, so nothing declared the run over.
+    iic then cancels the rest of the set, so the exposure carrying isLast never runs and
+    there is no later chance to release the lamps."""
+    res = expose(f'expose arc exptime={EXPTIME} cams=b1,r1 visit=1 bckIlluminators=pfilamps',
+                 background=dict(pfilamps=dict(hgcd=30)), inject=failAt('ccd_b1', 'read'))
+    assert res.cmd.didFail, 'the read failure was not reported'
+    assert res.sent('ccd_r1', 'read'), 'the working arm was not read out'
+    assert not res.isLit('pfilamps'), 'hgcd left burning with the rest of the set cancelled'
 
 
 def test_lamp_failure_after_shutters_opened_discards_exposed_data():
@@ -339,7 +357,7 @@ def test_finishing_a_backgrounded_run_releases_it():
     """An exposure finished by hand or by the sequence is the end of that run: iic concludes
     the sequence on a finishNow, so nothing later will use the lamps."""
     res = expose('expose arc exptime=20 cams=b1 visit=1 bckIlluminators=pfilamps',
-                 prepare=dict(pfilamps=dict(hgcd=30)), inject=whileIntegrating('finish'))
+                 background=dict(pfilamps=dict(hgcd=30)), inject=whileIntegrating('finish'))
     assert res.stopped('pfilamps') == 1, 'backgrounded run left burning after an early finish'
 
 

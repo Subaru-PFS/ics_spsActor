@@ -380,6 +380,12 @@ class Exposure(object):
         else:
             frames = []
 
+        # a failed exposure ends the run: it is reported as a failure, so whatever was going
+        # to use the light next is not going to happen.
+        if self.failures:
+            self.isLast = True
+            self.stopIlluminators(cmd)
+
         return genFileIds(visit, frames)
 
     def abort(self, cmd, reason="ExposureAborted()"):
