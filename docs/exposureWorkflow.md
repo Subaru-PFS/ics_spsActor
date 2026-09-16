@@ -248,33 +248,36 @@ Three ways in, and they are not the same thing:
 
 ```mermaid
 flowchart TD
-    UserA["sps exposure abort visit=N"] --> Fin["Exposure.finish"]
-    UserF["sps exposure finish visit=N"] --> Fin
-    Pulse["LampsControl: lamp pulse over"] --> Fin
-    Err["any exception in a thread"] --> Ab["Exposure.abort"]
+    UserA["sps exposure abort"] --> Fin
+    UserF["sps exposure finish"] --> Fin
+    Pulse["the lamp pulse is over"] --> Fin["Exposure.finish<br/>doDiscard = False"]
+    Err["a thread raised"] --> Ab["Exposure.abort<br/>doDiscard = True"]
 
-    Fin --> DoF["doFinish = True"]
-    Ab --> DoA["doAbort = True, failure recorded"]
+    Fin --> Q{"had the shutters<br/>already opened?"}
+    Q -->|"yes"| Keep["enu exposure finish,<br/>then read out"]
+    Q -->|"no"| Drop["clearExposure"]
 
-    DoF --> Each["every thread finish or abort"]
-    DoA --> Each
-
-    Each --> Open{"shutters open?"}
-    Open -->|"yes"| Close["enu exposure finish<br/>data is kept"]
-    Open -->|"no"| Clear["clearExposure<br/>data is discarded"]
+    Ab --> Drop
 ```
 
 `doAbort` and `doFinish` are polled, not signalled: `wipe`, `integrate` and
 `waitForGoSignal` check them between sleeps, which is why an interruption takes effect at
 the next phase boundary rather than instantly.
 
-The difference that matters: **finish keeps the data, abort discards it** — but only via
-`doDiscard`, and only when the shutters never opened. Once they have opened,
-`SpecModuleExposure.finish` reads out regardless, because photons already landed.
+**Two different things get called aborting, and `sps exposure abort` is not one of them.**
+It routes through `Exposure.finish` exactly as `sps exposure finish` does
+([ExposeCmd.py:226-254](../python/spsActor/Commands/ExposeCmd.py#L226-L254)) — only the
+reply text differs. So an exposure stopped by hand keeps whatever it had already
+collected: it simply becomes the last exposure of its run and ends now.
 
-`sps exposure abort` and `sps exposure finish` both call `Exposure.finish`
-([ExposeCmd.py:226-254](../python/spsActor/Commands/ExposeCmd.py#L226-L254)); only the
-reply text differs, and both mark the exposure as ending its illuminator runs.
+`Exposure.abort` is the other one, raised by a thread that failed, and it discards
+unconditionally. `doDiscard` clears the detectors whether or not the shutters had opened,
+so a lamp failing mid-pulse throws away photons that had already landed.
+
+And not every failure gets that far. A shutter that fails *after* opening, a read that
+fails, an H4 ramp that fails after its first read — each records a failure and lets the
+exposure finish, because the data may still be worth having. Only failures that reach
+`Exposure.abort` end the exposure.
 
 ## 8. Releasing the illuminators
 
@@ -287,7 +290,7 @@ therefore has to say when a lamp run is over.
 flowchart TD
     Close["the shutters close<br/>on their own"] --> Q1
     Ext["sps exposure abort<br/>or sps exposure finish"] --> Force
-    Fail["a failure in any thread"] --> Force
+    Fail["a thread failure that<br/>aborts the exposure"] --> Force
     Force["isLast = True<br/>nothing more will be exposed"] --> Q1
 
     Q1{"was the go sent?"} -->|"no"| Skip["nothing to release"]
@@ -306,6 +309,11 @@ it**: nothing more will be exposed, so the run is declared over and the only bra
 is *stop*. Exactly one route can decide to leave a lamp burning, for exactly one reason:
 the shutters closed normally on an exposure that is not the last of a backgrounded run,
 and the next exposure still needs the light.
+
+Note which failures reach this at all. A failure late enough to keep its data never calls
+`Exposure.abort`, so it never declares the run over — it arrives here, if at all, by the
+shutters closing behind it. That is why an enu failing with its shutters open leaves the
+lamps burning; see [section 10](#10-checking-a-change).
 
 Two sources feed it: the threads the exposure drives itself, and the actors named in
 `bckIlluminators`, which the iic sequence lit before the exposure existed. The first are

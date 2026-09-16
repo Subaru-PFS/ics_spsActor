@@ -175,7 +175,7 @@ class Sim(object):
             fired.append(True)
             func()
 
-        self.models[actor].keyVarDict[key].addCallback(callback)
+        self.models[actor].keyVarDict[key].watch(callback)
 
     def sent(self, actor=None, cmdHead=None):
         """Return the commands sent, filtered by actor and by command head."""

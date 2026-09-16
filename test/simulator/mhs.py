@@ -85,6 +85,7 @@ class KeyVar(object):
         self.name = name
         self.value = value
         self.callbacks = []
+        self.observers = []
 
     def getValue(self, doRaise=True):
         if self.value is None and doRaise:
@@ -101,12 +102,23 @@ class KeyVar(object):
     def removeCallback(self, callback):
         self.callbacks.remove(callback)
 
+    def watch(self, observer):
+        """Watch the value without being one of the actor's own callbacks.
+
+        Observers run once every callback has, so a scenario reacting to a keyword lands
+        after the actor has, never in between.
+        """
+        self.observers.append(observer)
+
     def set(self, value):
         """Set a new value and fire the callbacks, as the reactor thread would."""
         self.value = value
 
         for callback in list(self.callbacks):
             callback(self)
+
+        for observer in list(self.observers):
+            observer(self)
 
 
 class Model(object):

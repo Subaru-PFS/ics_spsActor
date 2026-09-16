@@ -314,6 +314,27 @@ def test_abort_during_integration_discards_nothing_already_exposed():
     assert res.sent('ccd_b1', 'read'), 'photons had landed, yet the data was discarded'
 
 
+def test_lamp_failure_after_shutters_opened_discards_exposed_data():
+    """doLamps sends the go only once the shutters are open, so this failure lands on
+    photons that already arrived, and Exposure.abort clears them anyway."""
+    res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 doLamps isLast',
+                 prepare=dict(pfilamps=dict(neon=EXPTIME)), inject=failAt('pfilamps', 'go'))
+    assert res.sim.models['enu_sm1'].keyVarDict['shutters'].value == 'close', 'shutters never cycled'
+    assert res.sent('ccd_b1', 'clearExposure'), 'doDiscard did not clear the detector'
+    assert not res.sent('ccd_b1', 'read'), 'discarded exposure was read out anyway'
+
+
+def test_a_commanded_end_keeps_what_was_already_exposed():
+    """sps exposure abort goes through Exposure.finish, not Exposure.abort, so unlike a
+    failure it keeps the data and merely ends the run here."""
+    for what in ('abort', 'finish'):
+        res = expose(f'expose arc exptime=20 cams=b1 visit=1 doLamps isLast',
+                     prepare=dict(pfilamps=dict(neon=0.2)), inject=whileIntegrating(what))
+        assert res.sent('ccd_b1', 'read'), f'{what} discarded data that was already exposed'
+        assert not res.sent('ccd_b1', 'clearExposure'), f'{what} cleared an exposed detector'
+        assert res.stopped('pfilamps') == 1, f'{what} left the lamps burning'
+
+
 def test_finishing_a_backgrounded_run_releases_it():
     """An exposure finished by hand or by the sequence is the end of that run: iic concludes
     the sequence on a finishNow, so nothing later will use the lamps."""
