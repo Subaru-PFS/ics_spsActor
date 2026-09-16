@@ -11,10 +11,11 @@ from ics.utils.threading import threaded
 class LampsControl(QThread):
     """ Placeholder to handle lamp cmd threading. """
     goCmd = 'go'
-    abortCmd = 'stop'
     waitForReadySignalTimeLim = 300
     goTimeMargin = 60
-    abortTimeLim = stopTimeLim = goNoWaitTimeLim = 10
+    goNoWaitTimeLim = 10
+    # the blocking go returns once the pulse is over, so nothing is left burning when shutters close.
+    stopWithShutter = False
 
     def __init__(self, exp, lampsActor, threadName='lampsControl'):
 
@@ -22,6 +23,7 @@ class LampsControl(QThread):
         self.lampsActor = lampsActor
         self.cmdVar = None
         self.goSignal = False
+        self.wentGo = False
         self.aborted = None
         QThread.__init__(self, exp.actor, threadName)
         QThread.start(self)
@@ -78,6 +80,7 @@ class LampsControl(QThread):
 
     def _go(self, cmd):
         """ Send go command to lampActor. """
+        self.wentGo = True
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr=self.goCmd,
                                       timeLim=self.exp.exptime + LampsControl.goTimeMargin)
 
@@ -114,16 +117,8 @@ class LampsControl(QThread):
             pfsTime.sleep.millisec()
 
     def abort(self, cmd):
-        """ Send stop command. """
-        if self.aborted is None:
-            self.aborted = False
-            # self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr=self.abortCmd, timeLim=LampsControl.abortTimeLim)
-            self.aborted = True
-
-    def declareDone(self, cmd):
-        """ Declare exposure is over.  """
-        pass
-        # self.actor.safeCall(cmd, actor=self.lampsActor, cmdStr='stop', timeLim=LampsControl.stopTimeLim)
+        """ Declare the lamp thread aborted. """
+        self.aborted = True
 
     def finish(self, cmd):
         """ Just a prototype. """
@@ -137,6 +132,8 @@ class LampsControl(QThread):
 class ShutterControlled(LampsControl):
     """ Placeholder to handle lamp cmd threading, in that class exposure time is controlled by shutters. """
     waitBeforeOpening = 2
+    # lamps are lit for longer than the shutters stay open, so they are still burning when it closes.
+    stopWithShutter = True
 
     @threaded
     def start(self, cmd):
@@ -154,6 +151,7 @@ class ShutterControlled(LampsControl):
 
     def _go(self, cmd):
         """ Send go command, no blocking.  """
+        self.wentGo = True
         cmdVar = self.actor.crudeCall(cmd, actor=self.lampsActor, cmdStr='go noWait',
                                       timeLim=LampsControl.goNoWaitTimeLim)
 
@@ -185,11 +183,7 @@ class NoLamps(QThread):
         pass
 
     def abort(self, cmd):
-        """ Send stop command. """
-        pass
-
-    def declareDone(self, cmd):
-        """ Declare exposure is over.  """
+        """ Just a prototype. """
         pass
 
     def finish(self, cmd):

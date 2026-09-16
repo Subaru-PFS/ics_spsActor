@@ -27,7 +27,8 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
         spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
-        expArgs = f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck] [@skipBiaCheck]'
+        expArgs = (f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck] [@skipBiaCheck] '
+                   f'[<bckIlluminators>] [@isLast]')
         lampsArgs = '[@doLamps] [@doShutterTiming]'
         windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
         self.exp = dict()
@@ -72,6 +73,8 @@ class ExposeCmd(object):
                                                  help='first row, total number of rows to read on red arm'),
                                         keys.Key('slideSlit', types.Float() * (1, 2),
                                                  help='pixels range(start, stop )'),
+                                        keys.Key('bckIlluminators', types.String() * (1,),
+                                                 help='illuminator(s) lit for this exposure by somebody else'),
                                         keys.Key("metadata",
                                                  types.Long(), types.String(),
                                                  types.Int(), types.Int(), types.Int(),
@@ -135,6 +138,8 @@ class ExposeCmd(object):
         doBiaCheck = 'skipBiaCheck' not in cmdKeys
         doSlideSlit = 'slideSlit' in cmdKeys
         slideSlitPixelRange = cmdKeys['slideSlit'].values if doSlideSlit else False
+        bckIlluminators = cmdKeys['bckIlluminators'].values if 'bckIlluminators' in cmdKeys else None
+        isLast = 'isLast' in cmdKeys
 
         if 'window' in cmdKeys:
             blueWindow = redWindow = cmdKeys['window'].values
@@ -159,7 +164,8 @@ class ExposeCmd(object):
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, metadata=metadata,
                      doShutterTiming=doShutterTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
-                     blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange)
+                     blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange,
+                     bckIlluminators=bckIlluminators, isLast=isLast)
 
     @singleShot
     def process(self, cmd, visit, exptype, doLamps, doShutterTiming, doSlideSlit, doIIS, **kwargs):
@@ -228,6 +234,8 @@ class ExposeCmd(object):
             cmd.fail(f'text="visit:{visit} is not ongoing, valids:{",".join(map(str, self.exp.keys()))} "')
             return
 
+        # nothing will be exposed after an abort, so no illuminator run outlives this one.
+        exposure.isLast = True
         exposure.finish(cmd)
         cmd.finish('text="aborting exposure now !"')
 
