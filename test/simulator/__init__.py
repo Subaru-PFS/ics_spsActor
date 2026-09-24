@@ -1,0 +1,1 @@
+"""Simulator for spsActor exposures."""

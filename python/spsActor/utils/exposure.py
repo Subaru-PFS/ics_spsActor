@@ -1,3 +1,5 @@
+import threading
+
 import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
@@ -281,15 +283,21 @@ class SpecModuleExposure(QThread):
 class Exposure(object):
     """Exposure object."""
     SpecModuleExposureClass = SpecModuleExposure
+    stopTimeLim = 30
     # Front-edge bumper for the IIS pulse: shutters open this many seconds before the
     # pulse to absorb the iisActor go-cmd round-trip. Trailing edge is handled by
     # LampsControl.start calling exp.finish(cmd) once the pulse returns.
     iisGoMargin = 10
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
-                 redWindow=False, expTimeOverHead=0, **kwargs):
+                 redWindow=False, expTimeOverHead=0, bckIlluminators=None, isLast=False, **kwargs):
         self.actor = actor
         self.visit = visit
+        # illuminators lit by somebody else, and whether their run ends with this exposure.
+        self.bckIlluminators = [] if bckIlluminators is None else list(bckIlluminators)
+        self.isLast = isLast
+        self.stoppedIlluminators = set()
+        self.illuminatorLock = threading.Lock()
         self.coreExpType = exptype  # save the actual exptype first
         self.exptype = 'test' if doTest else exptype  # force exptype == test if doTest
         self.exptime = exptime
@@ -372,6 +380,12 @@ class Exposure(object):
         else:
             frames = []
 
+        # a failed exposure ends the run: it is reported as a failure, so whatever was going
+        # to use the light next is not going to happen.
+        if self.failures:
+            self.isLast = True
+            self.stopIlluminators(cmd)
+
         return genFileIds(visit, frames)
 
     def abort(self, cmd, reason="ExposureAborted()"):
@@ -383,12 +397,20 @@ class Exposure(object):
         for thread in self.threads:
             thread.abort(cmd)
 
+        # nothing more will be exposed, so no illuminator run outlives this one.
+        self.isLast = True
+        self.stopIlluminators(cmd)
+
     def finish(self, cmd):
         """Finish current exposure."""
         self.doFinish = True
 
         for thread in self.threads:
             thread.finish(cmd)
+
+        # no shutter opened, so no close will come to end the illuminator runs.
+        if not self.didGenShutterKey['open']:
+            self.stopIlluminators(cmd)
 
     def start(self, cmd, visit):
         """Start all spectrograph module exposures."""
@@ -419,7 +441,43 @@ class Exposure(object):
 
             # Generate fiberIllumination keyword, e.g. was IIS used etc...
             if state == 'close':
+                self.stopIlluminators(self.cmd)
                 reactor.callLater(1, self.genIlluminationStatus)
+
+    def stopIlluminators(self, cmd):
+        """Declare that the fibers do not need to be lit anymore.
+
+        Only an illuminator that has been sent its go has anything to release: it then keeps
+        declaring the configuration it was given until stop, whether or not the lamps already went
+        out. A backgrounded illuminator was given its go before this exposure even started, hence
+        the two sources here.
+
+        A run ends with this exposure when isLast says so, and one whose lamps outlive the shutters
+        ends whenever they close. Each actor is commanded at most once, whichever path gets here
+        first.
+        """
+        illuminators = [thread.lampsActor for thread in self.lampsThreads
+                        if isinstance(thread, lampsControl.LampsControl) and thread.wentGo
+                        and (self.isLast or thread.stopWithShutter)]
+        illuminators += self.bckIlluminators if self.isLast else []
+
+        with self.illuminatorLock:
+            toStop = [actor for actor in dict.fromkeys(illuminators) if actor not in self.stoppedIlluminators]
+            self.stoppedIlluminators.update(toStop)
+
+        for lampsActor in toStop:
+            self.sendStop(cmd, lampsActor)
+
+    @singleShot
+    def sendStop(self, cmd, lampsActor):
+        """Command one illuminator off.
+
+        Each stop has its own thread: an actor sleeping through a blocking go only takes the stop
+        once the pulse is over, and that wait must not hold back the stop of another actor.
+        The time limit is the go's own for the same reason.
+        """
+        timeLim = max(Exposure.stopTimeLim, self.exptime + lampsControl.LampsControl.goTimeMargin)
+        self.actor.safeCall(cmd, actor=lampsActor, cmdStr='stop', timeLim=timeLim)
 
     def genIlluminationStatus(self):
         """Generate fiberIllumination keyword using a single unsigned integer."""
