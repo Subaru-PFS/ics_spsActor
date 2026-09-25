@@ -48,7 +48,7 @@ class Result(object):
 
 
 def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, background=None, inject=None,
-           timeout=60):
+           timeout=60, **simKeys):
     """Run one exposure against a fresh simulated spectrograph.
 
     Parameters
@@ -62,8 +62,10 @@ def expose(cmdStr, specNums=(1,), lightSource='pfi', prepare=None, background=No
         burning when the exposure starts, as the iic sequence leaves it for hgcd.
     inject : callable
         called with (sim, cmdSet) before the exposure starts, to arm an injection.
+    **simKeys
+        passed on to `Sim`: detector timings, IRP ratio, H4 start-up per module.
     """
-    sim = Sim(specNums=specNums, lightSource=lightSource)
+    sim = Sim(specNums=specNums, lightSource=lightSource, **simKeys)
     cmdSet = CmdSet(sim, ExposeCmd)
 
     for lampsActor, onTimes in (prepare or dict()).items():

@@ -5,6 +5,8 @@
 """
 
 import argparse
+import glob
+import importlib
 import os
 import sys
 import traceback
@@ -28,9 +30,10 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help='print the full traceback')
     args = parser.parse_args()
 
-    import testExposure
-
-    tests = collect(testExposure, args.patterns)
+    here = os.path.dirname(os.path.abspath(__file__))
+    modules = [importlib.import_module(os.path.basename(path)[:-3])
+               for path in sorted(glob.glob(os.path.join(here, 'test*.py')))]
+    tests = sum([collect(module, args.patterns) for module in modules], [])
     failed = []
     gaps = []
 

@@ -29,6 +29,8 @@ class CcdExposure(QThread):
         self.exptime = None
         self.readVar = None
         self.cleared = None
+        self.reading = False
+        self.rowsFraction = 0.0
 
         QThread.__init__(self, self.exp.actor, self.ccd)
         QThread.start(self)
@@ -38,6 +40,9 @@ class CcdExposure(QThread):
         # add callback for shutters state, useful to fire process asynchronously.
         self.stateKeyVar = exp.actor.models[self.ccd].keyVarDict['exposureState']
         self.stateKeyVar.addCallback(self.exposureState)
+
+        self.readRowsKeyVar = exp.actor.models[self.ccd].keyVarDict['readRows']
+        self.readRowsKeyVar.addCallback(self.readRowsCB)
 
     @property
     def exptype(self):
@@ -50,6 +55,11 @@ class CcdExposure(QThread):
     @property
     def isFinished(self):
         return self.cleared or self.storable
+
+    @property
+    def readFraction(self):
+        """Fraction of the rows read out; a read that is over, or will never come, counts as done."""
+        return 1.0 if (self.cleared or self.storable) else self.rowsFraction
 
     @property
     def wiped(self):
@@ -97,6 +107,15 @@ class CcdExposure(QThread):
         self.activatedState.append(state)
         self.actor.bcast.debug(f'text="{self.ccd} {state}"')
 
+    def readRowsCB(self, keyVar):
+        """Readout progress callback, only meaningful once this exposure's read was sent."""
+        if not self.reading:
+            return
+
+        rowsDone, rowsTotal = keyVar.getValue(doRaise=False)
+        self.rowsFraction = rowsDone / rowsTotal
+        self.exp.ccdReadProgress()
+
     def _wipe(self, cmd):
         """ Send ccd wipe command and handle reply """
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=f'wipe {self.wipeFlavour}',
@@ -124,8 +143,10 @@ class CcdExposure(QThread):
         if self.readFlavour:
             cmdParams[self.readFlavour] = True
 
+        self.reading = True
         cmdVar = self.actor.crudeCall(cmd, actor=self.ccd, cmdStr=cmdUtils.parse('read', **cmdParams),
                                       timeLim=CcdExposure.readTimeLim)
+        self.reading = False
 
         if cmdVar.didFail:
             raise exception.ReadFailed(self.ccd, cmdUtils.interpretFailure(cmdVar))
@@ -161,6 +182,7 @@ class CcdExposure(QThread):
             self.cleared = False
             self.actor.safeCall(cmd, actor=self.ccd, cmdStr='clearExposure', timeLim=CcdExposure.clearTimeLim)
             self.cleared = True
+            self.exp.ccdReadProgress()
 
     @threaded
     def expose(self, cmd, visit):
@@ -180,6 +202,8 @@ class CcdExposure(QThread):
             self.handleReadFailed(cmd)
             self.exp.failures.add(reason=str(e))  # at this point, no need to abort, just report the failure.
 
+        self.exp.ccdReadProgress()
+
     @threaded
     def wipe(self, cmd):
         """ Wipe in thread. """
@@ -197,6 +221,8 @@ class CcdExposure(QThread):
         except exception.ReadFailed as e:
             self.handleReadFailed(cmd)
             self.exp.failures.add(reason=str(e))  # at this point, no need to abort, just report the failure.
+
+        self.exp.ccdReadProgress()
 
     def handleReadFailed(self, cmd):
         """Handle read failure"""
@@ -245,4 +271,5 @@ class CcdExposure(QThread):
     def exit(self):
         """Overriding QThread.exit(self)"""
         self.stateKeyVar.removeCallback(self.exposureState)
+        self.readRowsKeyVar.removeCallback(self.readRowsCB)
         QThread.exit(self)
