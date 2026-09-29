@@ -13,7 +13,7 @@ import ics.utils.time as pfsTime
 import yaml
 from ics.utils.sps.config import SpecModule, SpsConfig
 
-from .devices import Ccd, Enu, Lamps
+from .devices import Ccd, Enu, Hx, Lamps
 from .mhs import Cmd, CmdVar, Model
 
 INSTDATA = os.path.expanduser('~/devel/ics/pfs_instdata')
@@ -34,9 +34,22 @@ class Sim(object):
         light source every module is connected to.
     site : `str`
         pfs_instdata site section to read the module description from.
+    h4ReadTime : `float`
+        seconds per H4 read; 0.35 is IRP4 (6.924 s) at the simulator's 1:20 scale.
+    irpRatio : `int`
+        what the hx actors publish as their IRP ratio.
+    ccdReadTime : `float`
+        seconds per full-frame ccd readout, also written into the ramp config the exposure
+        sizes the H4 ramp with, so both stay on the same scale.
+    hxStartup : `dict`
+        seconds from the ramp command to the reset frame, keyed by spectrograph module; the
+        spread between modules is what the extra reads absorb.
+    iisGoLatency : `float`
+        seconds between the iis go and its lamp lighting up.
     """
 
-    def __init__(self, specNums=(1,), lightSource='pfi', site='S'):
+    def __init__(self, specNums=(1,), lightSource='pfi', site='S', h4ReadTime=0.35, irpRatio=4,
+                 ccdReadTime=0.05, hxStartup=None, iisGoLatency=0):
         self.bcast = Cmd('bcast')
         self.logger = logging.getLogger('sim.sps')
         self.models = dict()
@@ -51,6 +64,7 @@ class Sim(object):
 
         with open(os.path.join(INSTDATA, 'config/actors/sps.yaml')) as cfg:
             self.actorConfig = yaml.safe_load(cfg)['sps']
+        self.actorConfig['exposure']['ramp']['ccdReadTime'] = ccdReadTime
 
         spsData = SpsData(lightSource)
         localConfig = self.actorConfig[site]
@@ -62,8 +76,11 @@ class Sim(object):
             self.attach(Enu(self, specModule.specName))
 
             for cam in specModule.cams.values():
-                if cam.arm != 'n':
-                    self.attach(Ccd(self, cam))
+                if cam.arm == 'n':
+                    startup = (hxStartup or dict()).get(specNum, 0.05)
+                    self.attach(Hx(self, cam, h4ReadTime, irpRatio, startupTime=startup))
+                else:
+                    self.attach(Ccd(self, cam, readTime=ccdReadTime))
 
             if specModule.lightSource.lampsActor:
                 # pfilamps sleeps through a blocking go inside its handler; the ics_utils lamp
@@ -71,7 +88,7 @@ class Sim(object):
                 lampsActor = specModule.lightSource.lampsActor
                 self.attach(Lamps(self, lampsActor, serialized=lampsActor == 'pfilamps'))
 
-        self.attach(Lamps(self, 'iis'))
+        self.attach(Lamps(self, 'iis', goLatency=iisGoLatency))
 
     def attach(self, device):
         self.devices.setdefault(device.name, device)

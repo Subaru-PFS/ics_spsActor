@@ -80,6 +80,7 @@ class Enu(Device):
         self.model.declare('bia', 'off')
         self.model.declare('slitAtSpeed', False)
         self.finishNow = threading.Event()
+        self.closedAt = None
 
     def do_shutters(self, args, timeLim):
         """Open the shutters, hold them for exptime unless finished early, then close."""
@@ -100,7 +101,7 @@ class Enu(Device):
         # the enu closes the shutters when the exposure is finished early, hence the wait.
         self.finishNow.wait(timeout=exptime)
 
-        closedAt = pfsTime.timestamp()
+        closedAt = self.closedAt = pfsTime.timestamp()
         self.key('shutters').set('close')
         self.key('shutterTimings').set([visit, isoNow(startedAt), isoNow(openedAt),
                                         isoNow(closedAt), isoNow(closedAt)])
@@ -117,14 +118,18 @@ class Enu(Device):
 
 
 class Ccd(Device):
-    """A b/r/m detector, announcing each state it goes through."""
+    """A b/r/m detector, announcing each state it goes through and its readout progress."""
 
-    wipeTime = readTime = 0.05
+    wipeTime = 0.05
+    ROWS, EVERY = 4300, 500
 
-    def __init__(self, sim, cam):
+    def __init__(self, sim, cam, readTime=0.05):
         Device.__init__(self, sim, f'ccd_{cam}')
         self.cam = cam
+        self.readTime = readTime
+        self.rowsAt = []
         self.model.declare('exposureState', 'idle')
+        self.model.declare('readRows', [0, Ccd.ROWS])
 
     def do_wipe(self, args, timeLim):
         self.sim.failIfRequested(self.name, 'wipe')
@@ -134,9 +139,16 @@ class Ccd(Device):
         return CmdVar()
 
     def do_read(self, args, timeLim):
+        """Read out, publishing readRows every EVERY rows as the ccd actor does."""
         self.sim.failIfRequested(self.name, 'read')
         self.key('exposureState').set('reading')
-        pfsTime.sleep.millisec(int(Ccd.readTime * 1000))
+
+        steps = list(range(0, Ccd.ROWS, Ccd.EVERY)) + [Ccd.ROWS - 1]
+        for rows in steps:
+            pfsTime.sleep.millisec(int(self.readTime * 1000 / len(steps)))
+            self.rowsAt.append((pfsTime.timestamp(), rows / Ccd.ROWS))
+            self.key('readRows').set([rows, Ccd.ROWS])
+
         self.key('exposureState').set('idle')
 
         armNum = dict(b=1, r=2, n=3, m=4)[self.cam.arm]
@@ -146,6 +158,58 @@ class Ccd(Device):
 
     def do_clearExposure(self, args, timeLim):
         self.key('exposureState').set('idle')
+        return CmdVar()
+
+
+class Hx(Device):
+    """An H4 detector: a free-running ramp of reads that can only be told when to stop.
+
+    Records when each read ended and when it was told to finish, which is what the ramp
+    assertions read back.
+    """
+
+    def __init__(self, sim, cam, readTime, irpRatio, startupTime=0.05):
+        Device.__init__(self, sim, f'hx_{cam}')
+        self.cam = cam
+        self.readTime = readTime
+        self.startupTime = startupTime
+        self.readsAt = []
+        self.finishes = []
+        self.nread = None
+        self.stopAfter = None
+        self.model.declare('readTime', readTime)
+        self.model.declare('irp', [True, irpRatio, irpRatio])
+        self.model.declare('hxread')
+        self.model.declare('filename')
+
+    def do_ramp(self, args, timeLim):
+        if args.pop('finish', False):
+            return self.finishRamp(args)
+
+        visit, self.nread = int(args['visit']), int(args['nread'])
+        self.readsAt, self.finishes, self.stopAfter = [], [], None
+
+        pfsTime.sleep.millisec(int(self.startupTime * 1000))
+        pfsTime.sleep.millisec(int(self.readTime * 1000))
+        self.key('hxread').set([visit, 1, 0, 1])
+
+        for read in range(1, self.nread + 1):
+            pfsTime.sleep.millisec(int(self.readTime * 1000))
+            self.readsAt.append(pfsTime.timestamp())
+            self.key('hxread').set([visit, 1, 1, read])
+
+            if self.stopAfter is not None and read >= self.stopAfter:
+                break
+
+        self.key('filename').set(f'/data/raw/2026-09-24/ramps/PFSB{visit:06d}{self.cam.specNum}3.fits')
+        return CmdVar()
+
+    def finishRamp(self, args):
+        """ramp finish [stopRamp]: with stopRamp, the read after the current one is the last."""
+        self.finishes.append((pfsTime.timestamp(), bool(args.get('stopRamp'))))
+        if args.get('stopRamp'):
+            self.stopAfter = len(self.readsAt) + 1
+
         return CmdVar()
 
 

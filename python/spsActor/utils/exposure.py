@@ -201,7 +201,8 @@ class SpecModuleExposure(QThread):
         self.exp.genShutterKey('close', lightSource=self.specConfig.lightSource)
 
         # Declare final read, that will call finishRamp on the next hxRead callback.
-        if self.hxExposure:
+        # With ccds exposed, the ramp reads on through their readout, see Exposure.ccdReadProgress.
+        if self.hxExposure and not self.exp.hasCcd:
             self.hxExposure.declareFinalRead()
 
     def iisIlluminated(self):
@@ -310,6 +311,7 @@ class Exposure(object):
         self.syncSpectrograph = self.exposureConfig['doSyncSpectrograph']
         self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)
         self.rampConfig = self.exposureConfig['ramp']
+        self.hasCcd = any(cam.arm != 'n' for cam in cams)
 
         self.cmd = None
         self.doAbort = False
@@ -359,6 +361,18 @@ class Exposure(object):
     @property
     def threads(self):
         return self.smThreads + self.lampsThreads
+
+    def ccdReadProgress(self):
+        """Pass the readout progress of the slowest ccd on to every H4 ramp."""
+        ccds = [camExp for camExp in self.camExp if isinstance(camExp, ccdExposure.CcdExposure)]
+        if not ccds:
+            return
+
+        fraction = min(ccd.readFraction for ccd in ccds)
+
+        for camExp in self.camExp:
+            if isinstance(camExp, hxExposure.HxExposure):
+                camExp.ccdReadProgress(fraction)
 
     def instantiate(self, cams):
         """Create underlying specModuleExposure threads."""
@@ -555,6 +569,10 @@ class DarkExposure(Exposure):
     @property
     def lampsThreads(self):
         return []
+
+    def ccdReadProgress(self):
+        """Dark ramps are sized to the exposure and end on their own."""
+        pass
 
     def instantiate(self, cams):
         """Create underlying CcdExposure threads object."""

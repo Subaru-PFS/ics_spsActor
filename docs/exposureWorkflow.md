@@ -103,7 +103,7 @@ regardless of config.
 An H4 has no wipe and no read. It runs a ramp of `nRead` reads and writes its own file;
 spsActor cannot stop it mid-read, only ask it to stop after the current one. The code
 papers over the difference with three aliases
-([hxExposure.py:88-92](../python/spsActor/utils/hxExposure.py#L88-L92)):
+([hxExposure.py:94-98](../python/spsActor/utils/hxExposure.py#L94-L98)):
 
 ```python
 # gotcha to pretend this is a ccd.
@@ -118,7 +118,7 @@ so `SpecModuleExposure` can treat both the same. What actually differs:
 | started by | `ccd wipe` | `hx ramp nread=N`, before the wipe |
 | `wiped` means | saw `wiping` **and** `integrating` | saw the first read, `nGroup=1 nRead=1` |
 | during integration | waits on the wall clock | keeps reading every `readTime` |
-| ended by | `ccd read`, sent after the shutter closes | shutter close sets a flag; the *next* read sends `ramp finish` |
+| ended by | `ccd read`, sent after the shutter closes | a flag set at shutter close (NIR only), or once the ccds are 55–80% read out; the *next* read sends `ramp finish` |
 | produces its file | in the `read` reply | asynchronously, via the `filename` keyVar |
 | discarded by | `ccd clearExposure` | `ramp finish stopRamp` |
 | timeout guard | `wipeTimeLim=30`, `readTimeLim=90` | `2*readTime+15` to reset, `3*readTime+15` to first read |
@@ -132,40 +132,57 @@ reset takes two reads, so starting them together would open the shutter before t
 ready.
 
 ```
-time ──────────────────────────────────────────────────────────────────►
+time ────────────────────────────────────────────────────────────────────────────►
 
-hx_n1     ramp──┬─reset─┬─read1──read2──read3── … ──readK──┬──…──readN─┐
-                │       │                                  │           │
-                │       │                          declareFinalRead    │
-                │       │                                  │      ramp finish
-ccd_b1          └─wipe──┴─integrating────────────────────────────read──┘
-                        │                                  │
-                     barrier                               │
-enu_sm1                 └──────────open───exptime───close──┘
+hx_n1     ramp──┬─reset─┬─read1──read2── … ─────────── … ──readK──┬──readN─┐
+                │       │                                         │        │
+                │       │                               declareFinalRead   │
+                │       │                                         │   ramp finish
+ccd_b1          └─wipe──┴─integrating──────┬──read out rows ── 80%┴────────┘
+                        │                  │
+                     barrier               │
+enu_sm1                 └──open──exptime──close
 ```
 
+With ccds exposed the H4 reads on through their readout, as drawn. With NIR arms only
+there is no readout to wait for, and `declareFinalRead` moves to the shutter close.
+
 `nRead` is sized from the exposure time up front
-([hxExposure.py:37-53](../python/spsActor/utils/hxExposure.py#L37-L53)):
+([hxExposure.py:37-55](../python/spsActor/utils/hxExposure.py#L37-L55)):
 
 | exptype | reads |
 |---|---|
 | `bias` | `0` — the H4 sits the exposure out entirely |
 | `dark` | `round(exptime / readTime) + 1` |
-| anything else | `(exptime + expTimeOverHead) // readTime + nReadMin + nExtraRead` |
+| anything else | `(exptime + expTimeOverHead + ccdReadTime) // readTime + nReadMin + nExtraRead` |
 
-with `nReadMin=3` and `nExtraRead=1` from config: one clean read before the shutter opens,
-one after it closes, and one spare so the H4 can be synchronised safely.
+`nReadMin=3` is one clean read before the shutter opens, one after it closes, and one
+spare. `nExtraRead` comes from `nExtraReadPerIrp` by the hx `irpRatio`, 1 at IRP1 and 3 at
+IRP4: it covers the spread between modules in how long an H4 takes from the ramp command to
+its first read, which the shutter barrier makes the early modules wait out — up to 8 s,
+more than one IRP4 read. `ccdReadTime` (40 s) is only counted when ccds are exposed, to
+leave the ramp room to read through their readout; the count is a ceiling, since the ramp
+is told when to stop.
 
 ### Landing the ramp
 
-When the shutters close, `shuttersCloseCB` calls `declareFinalRead()`, which only sets
-`doFinalize` — the reactor thread must not block. The next `hxread` callback decides what
-to do with the reads that are left
-([hxExposure.py:189-198](../python/spsActor/utils/hxExposure.py#L189-L198)):
+`declareFinalRead()` only sets `doFinalize`, since it is called from the reactor thread,
+which must not block. Who calls it depends on the exposure:
+
+- **NIR arms only**: `shuttersCloseCB`, when the shutters close.
+- **With ccds**: `Exposure.ccdReadProgress`, once the slowest ccd's `readRows` reaches
+  `finalReadAtCcdRows` — 55% at IRP1, 80% at IRP4. A ccd that has finished, failed or been
+  cleared counts as read. The ramp ends one to two reads later, which those thresholds put
+  at the end of the ccd readout; ending it sooner gains nothing, since the exposure waits
+  for the ccds anyway.
+
+The next `hxread` callback then decides what to do with the reads that are left
+([hxExposure.py:195-204](../python/spsActor/utils/hxExposure.py#L195-L204)):
 
 ```mermaid
 flowchart TD
-    Close["shutters close"] --> Flag["declareFinalRead: doFinalize = True"]
+    Close["shutters close<br/>NIR arms only"] --> Flag["declareFinalRead: doFinalize = True"]
+    Rows["slowest ccd at 55% / 80% of its rows<br/>with ccds"] --> Flag
     Flag --> Next["next hxread callback"]
     Next --> Left{"reads left?"}
     Left -->|"no"| Natural["ramp ends on its own"]
@@ -232,12 +249,13 @@ so the exposure runs as a plain one and is merely *told* which illuminators are 
 |---|---|---|
 | `enu_smN shutters` | `ShutterState.callback` | `shuttersOpenCB` on open, `shuttersCloseCB` on open-then-close |
 | `ccd_XN exposureState` | `CcdExposure.exposureState` | records the states that make up `wiped` |
+| `ccd_XN readRows` | `CcdExposure.readRowsCB` | readout progress, which ends the H4 ramps of an exposure with ccds |
 | `hx_nN hxread` | `HxExposure.hxReadCB` | `reset` / `integrating` / `idle`, and lands the ramp |
 | `hx_nN filename` | `HxExposure.newFileNameCB` | marks the H4 storable |
 
 `shuttersOpenCB` fires the IIS go signal once *every* module is open. `shuttersCloseCB`
 generates the close keyword once, gated on every module having actually exposed, and tells
-the H4 to land ([exposure.py:191-205](../python/spsActor/utils/exposure.py#L191-L205)).
+the H4 to land ([exposure.py:191-206](../python/spsActor/utils/exposure.py#L191-L206)).
 
 Note the gate: a module whose shutter never opened leaves `didExpose` false, so the close
 keyword — and everything hanging off it — never fires.

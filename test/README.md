@@ -27,13 +27,14 @@ vocabulary and its argument parsing are the actor's own. `SpsConfig` is built fr
 `pfs_instdata`, so light sources and shutter sets are the ones the summit uses.
 
 Simulated: the devices behind the commands. An enu opens its shutters, holds them for the
-exposure time unless finished early, closes them and publishes `shutterTimings`; a detector
-announces every state it passes through; a lamp controller records whether its lamps were
-fired and whether anything released them. Timings are scaled to fractions of a second.
+exposure time unless finished early, closes them and publishes `shutterTimings`; a ccd
+announces every state it passes through and publishes `readRows` as it reads out; an H4
+runs its ramp on its own clock, publishing `hxread` per read, and only stops when told; a
+lamp controller records whether its lamps were fired and whether anything released them.
+Timings are scaled 1:20, so an IRP4 read is 0.35 s and a full-frame readout 2 s.
 
-Not simulated: the NIR arm, whose ramp timing and file handling need a different device, and
-the twisted reactor, so anything deferred with `callLater` — the `fiberIllumination` keyword
-— does not fire.
+Not simulated: the twisted reactor, so anything deferred with `callLater` — the
+`fiberIllumination` keyword — does not fire.
 
 ## Injecting an interruption
 
