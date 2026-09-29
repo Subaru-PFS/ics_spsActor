@@ -65,15 +65,6 @@ class Exposure(exposure.Exposure):
     def lampsThreads(self):
         return [self.lampsThread] + self.iisThreads
 
-    def waitForCompletion(self, cmd, visit):
-        """ Wait for exposure completion.  """
-        fileIds = exposure.Exposure.waitForCompletion(self, cmd, visit=visit)
-
-        # pfilamps expect proper end.
-        self.lampsThread.declareDone(cmd)
-
-        return fileIds
-
     def waitForReadySignal(self):
         """ Wait ready signal from lampActor. """
         while not self.lampsThread.isReady:
