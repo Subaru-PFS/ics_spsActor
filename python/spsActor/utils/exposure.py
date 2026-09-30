@@ -286,8 +286,8 @@ class Exposure(object):
     SpecModuleExposureClass = SpecModuleExposure
     stopTimeLim = 30
     # Front-edge bumper for the IIS pulse: shutters open this many seconds before the
-    # pulse to absorb the iisActor go-cmd round-trip. Trailing edge is handled by
-    # LampsControl.start calling exp.finish(cmd) once the pulse returns.
+    # pulse to absorb the iisActor go-cmd round-trip, for an exposure the pulse is timed
+    # by. A science frame is timed by its own exptime and gets no margin.
     iisGoMargin = 10
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
@@ -319,11 +319,15 @@ class Exposure(object):
         self.didGenShutterKey = dict(open=False, close=False)
 
         self.failures = exception.Failures()
+        # An object frame is timed by the observer, not by the lamp: there the iis pulse
+        # neither widens the shutter window nor ends it.
+        iisDefinesExposure = doIIS and exptype != 'object'
         # central IIS lamp thread, instantiated once for the whole exposure.
         self.iisLampsThread = lampsControl.LampsControl(self, lampsActor='iis',
-                                                        threadName='iisControl') if doIIS else None
-        # safety bumper widening the shutter window when iis is firing; 0 otherwise.
-        self.iisShutterOverHead = Exposure.iisGoMargin if doIIS else 0
+                                                        threadName='iisControl',
+                                                        doFinishExposure=iisDefinesExposure) if doIIS else None
+        # safety bumper widening the shutter window when iis times the exposure; 0 otherwise.
+        self.iisShutterOverHead = Exposure.iisGoMargin if iisDefinesExposure else 0
         self.smThreads = self.instantiate(cams)
 
     @property
@@ -357,6 +361,15 @@ class Exposure(object):
     @property
     def lampsThreads(self):
         return self.iisThreads
+
+    @property
+    def definingLampsThreads(self):
+        """The lamp threads whose pulses time the exposure.
+
+        Empty when nothing does, as for a science frame flashing IIS, which then runs for
+        the commanded exposure time.
+        """
+        return [thread for thread in self.lampsThreads if thread.doFinishExposure]
 
     @property
     def threads(self):
