@@ -178,7 +178,7 @@ class Hx(Device):
         self.nread = None
         self.stopAfter = None
         self.model.declare('readTime', readTime)
-        self.model.declare('irp', [True, irpRatio, irpRatio])
+        self.model.declare('irp', [bool(irpRatio), irpRatio, irpRatio])
         self.model.declare('hxread')
         self.model.declare('filename')
 

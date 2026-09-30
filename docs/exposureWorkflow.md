@@ -60,7 +60,7 @@ shutter machinery at all.
 
 ## 3. One module exposure, phase by phase
 
-`SpecModuleExposure.expose` ([exposure.py:165-189](../python/spsActor/utils/exposure.py#L165-L189))
+`SpecModuleExposure.expose` ([exposure.py:166-190](../python/spsActor/utils/exposure.py#L166-L190))
 is four steps, and each can be interrupted:
 
 ```mermaid
@@ -93,7 +93,7 @@ sequenceDiagram
 ```
 
 The barrier at the end of phase 1 is `syncThreadsToOpen`
-([exposure.py:86-89](../python/spsActor/utils/exposure.py#L86-L89)): with
+([exposure.py:87-90](../python/spsActor/utils/exposure.py#L87-L90)): with
 `doSyncSpectrograph` set, *every* module's detectors must be wiped before *any* shutter
 opens, so all spectrographs see the same photons. `lampsExposure.Exposure` forces that on
 regardless of config.
@@ -103,7 +103,7 @@ regardless of config.
 An H4 has no wipe and no read. It runs a ramp of `nRead` reads and writes its own file;
 spsActor cannot stop it mid-read, only ask it to stop after the current one. The code
 papers over the difference with three aliases
-([hxExposure.py:94-98](../python/spsActor/utils/hxExposure.py#L94-L98)):
+([hxExposure.py:93-97](../python/spsActor/utils/hxExposure.py#L93-L97)):
 
 ```python
 # gotcha to pretend this is a ccd.
@@ -148,7 +148,8 @@ With ccds exposed the H4 reads on through their readout, as drawn. With NIR arms
 there is no readout to wait for, and `declareFinalRead` moves to the shutter close.
 
 `nRead` is sized from the exposure time up front
-([hxExposure.py:37-55](../python/spsActor/utils/hxExposure.py#L37-L55)):
+([hxExposure.py:37-53](../python/spsActor/utils/hxExposure.py#L37-L53)), by
+`ExposureTiming.nH4Read` in ics_utils for anything but a bias or a dark:
 
 | exptype | reads |
 |---|---|
@@ -160,9 +161,10 @@ there is no readout to wait for, and `declareFinalRead` moves to the shutter clo
 spare. `nExtraRead` comes from `nExtraReadPerIrp` by the hx `irpRatio`, 1 at IRP1 and 3 at
 IRP4: it covers the spread between modules in how long an H4 takes from the ramp command to
 its first read, which the shutter barrier makes the early modules wait out — up to 8 s,
-more than one IRP4 read. `ccdReadTime` (40 s) is only counted when ccds are exposed, to
-leave the ramp room to read through their readout; the count is a ceiling, since the ramp
-is told when to stop.
+more than one IRP4 read. An hx reporting no `irp`, or IRP disabled, is taken at the
+configured `ramp.irpRatio` (4), with a warning. `ccdReadTime` (42 s, in the `timing`
+section) is only counted when ccds are exposed, to leave the ramp room to read through
+their readout; the count is a ceiling, since the ramp is told when to stop.
 
 ### Landing the ramp
 
@@ -177,7 +179,7 @@ which must not block. Who calls it depends on the exposure:
   for the ccds anyway.
 
 The next `hxread` callback then decides what to do with the reads that are left
-([hxExposure.py:195-204](../python/spsActor/utils/hxExposure.py#L195-L204)):
+([hxExposure.py:194-203](../python/spsActor/utils/hxExposure.py#L194-L203)):
 
 ```mermaid
 flowchart TD
@@ -255,7 +257,7 @@ so the exposure runs as a plain one and is merely *told* which illuminators are 
 
 `shuttersOpenCB` fires the IIS go signal once *every* module is open. `shuttersCloseCB`
 generates the close keyword once, gated on every module having actually exposed, and tells
-the H4 to land ([exposure.py:191-206](../python/spsActor/utils/exposure.py#L191-L206)).
+the H4 to land ([exposure.py:192-207](../python/spsActor/utils/exposure.py#L192-L207)).
 
 Note the gate: a module whose shutter never opened leaves `didExpose` false, so the close
 keyword — and everything hanging off it — never fires.

@@ -12,6 +12,7 @@ import threading
 import ics.utils.time as pfsTime
 import yaml
 from ics.utils.sps.config import SpecModule, SpsConfig
+from opscore.utility.qstr import qstr
 
 from .devices import Ccd, Enu, Hx, Lamps
 from .mhs import Cmd, CmdVar, Model
@@ -37,9 +38,9 @@ class Sim(object):
     h4ReadTime : `float`
         seconds per H4 read; 0.35 is IRP4 (6.924 s) at the simulator's 1:20 scale.
     irpRatio : `int`
-        what the hx actors publish as their IRP ratio.
+        what the hx actors publish as their IRP ratio, 0 for IRP disabled.
     ccdReadTime : `float`
-        seconds per full-frame ccd readout, also written into the ramp config the exposure
+        seconds per full-frame ccd readout, also written into the timing config the exposure
         sizes the H4 ramp with, so both stay on the same scale.
     hxStartup : `dict`
         seconds from the ramp command to the reset frame, keyed by spectrograph module; the
@@ -64,7 +65,7 @@ class Sim(object):
 
         with open(os.path.join(INSTDATA, 'config/actors/sps.yaml')) as cfg:
             self.actorConfig = yaml.safe_load(cfg)['sps']
-        self.actorConfig['exposure']['ramp']['ccdReadTime'] = ccdReadTime
+        self.actorConfig['exposure']['timing']['ccdReadTime'] = ccdReadTime
 
         spsData = SpsData(lightSource)
         localConfig = self.actorConfig[site]
@@ -93,8 +94,12 @@ class Sim(object):
     def attach(self, device):
         self.devices.setdefault(device.name, device)
 
+    def strTraceback(self, e):
+        """The failure text an actor gives a command whose handler raised."""
+        return qstr(f'command failed: {e!r}')
+
     def declareModel(self, name):
-        self.models.setdefault(name, Model())
+        self.models.setdefault(name, Model(name))
         return self.models[name]
 
     def lamps(self, name):

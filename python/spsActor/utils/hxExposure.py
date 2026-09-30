@@ -46,11 +46,9 @@ class HxExposure(QThread):
                 # signal = ramp[-1] - ramp[0], you need a clean ramp[0] that will be subtracted, and you need an extra
                 # after the shutter/lamp transition.
                 # In other words you always need to bracket your signal with clean/stable ramps.
-                # EDIT APRIL24 : to be able to synchronise h4 safely, an extra-read was added.
-                nReadMin = exp.rampConfig['nReadMin'] + self.nExtraRead
                 # with ccds exposed, the ramp reads through their readout and is told when to stop.
-                readThrough = exp.rampConfig.get('ccdReadTime', 0) if exp.hasCcd else 0
-                nRead = (exp.exptime + exp.expTimeOverHead + readThrough) // self.readTime + nReadMin
+                nRead = exp.timing.nH4Read(exp.exptime, self.readTime, self.irpRatio, hasCcd=exp.hasCcd,
+                                           overhead=exp.expTimeOverHead)
 
             return int(nRead)
 
@@ -77,10 +75,11 @@ class HxExposure(QThread):
         self.dateobs = None
 
         self.states = ['none']
-        self.readTime = float(exp.actor.models[self.hx].keyVarDict['readTime'].getValue())
-        self.irpRatio = self.getIrpRatio()
-        self.nExtraRead = exp.rampConfig.get('nExtraReadPerIrp', {}).get(self.irpRatio, exp.rampConfig['nExtraRead'])
-        self.finalReadAtCcdRows = exp.rampConfig.get('finalReadAtCcdRows', {}).get(self.irpRatio, 1.0)
+        hxModel = exp.actor.models[self.hx]
+        self.readTime = exp.timing.readReadTime(hxModel)
+        self.irpRatio = exp.timing.readIrpRatio(hxModel)
+        self.nExtraRead = exp.timing.nExtraRead(self.irpRatio)
+        self.finalReadAtCcdRows = exp.timing.finalReadAtCcdRows(self.irpRatio)
         # differentiating between the original number of read (nRead0) and current number of read(nRead).
         self.nRead = self.nRead0 = nRead(exp)
 
@@ -288,12 +287,6 @@ class HxExposure(QThread):
             self.exp.failures.add(reason=reason)  # just report the failure, but proceed with the rest of the camera.
         else:
             self.exp.abort(cmd, reason=reason)  # early failure, report and abort right away.
-
-    def getIrpRatio(self):
-        """The IRP ratio the H4 reads with, None if the hx actor has not published it."""
-        irp = self.exp.actor.models[self.hx].keyVarDict.get('irp')
-        value = irp.getValue(doRaise=False) if irp is not None else None
-        return int(value[1]) if value else None
 
     def ccdReadProgress(self, fraction):
         """Declare the final read once the slowest ccd has read out that fraction of its rows.

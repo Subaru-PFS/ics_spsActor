@@ -4,6 +4,7 @@ import ics.utils.cmd as cmdUtils
 import ics.utils.time as pfsTime
 import spsActor.utils.exception as exception
 from actorcore.QThread import QThread
+from ics.utils.sps.exposureTiming import ExposureTiming
 from ics.utils.threading import singleShot
 from ics.utils.threading import threaded
 from opscore.utility.qstr import qstr
@@ -310,7 +311,7 @@ class Exposure(object):
 
         self.syncSpectrograph = self.exposureConfig['doSyncSpectrograph']
         self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)
-        self.rampConfig = self.exposureConfig['ramp']
+        self.timing = ExposureTiming(self.exposureConfig)
         self.hasCcd = any(cam.arm != 'n' for cam in cams)
 
         self.cmd = None

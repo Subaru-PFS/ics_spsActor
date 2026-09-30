@@ -33,6 +33,11 @@ def test_nir_only_ramp_takes_its_extra_reads_by_irp():
     assert plannedReads(res1, 'n1') == int(1.0 // 0.543) + 3 + 1, plannedReads(res1, 'n1')
 
 
+def test_ramp_without_irp_takes_the_configured_irp_extra_reads():
+    res = expose('expose object exptime=1.0 cams=n1 visit=1 isLast', h4ReadTime=0.35, irpRatio=0)
+    assert plannedReads(res, 'n1') == int(1.0 // 0.35) + 3 + 3, plannedReads(res, 'n1')
+
+
 def test_nir_only_ramp_is_finished_at_shutter_close():
     res = expose('expose object exptime=1.0 cams=n1 visit=1 isLast', **IRP4)
     hx, closedAt = res.sim.devices['hx_n1'], res.sim.devices['enu_sm1'].closedAt
