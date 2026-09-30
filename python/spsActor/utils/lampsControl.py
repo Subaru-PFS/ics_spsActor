@@ -10,6 +10,8 @@ from ics.utils.threading import threaded
 
 class LampsControl(QThread):
     """ Placeholder to handle lamp cmd threading. """
+    # whether the exposure is timed by this pulse, unless the caller says otherwise.
+    finishesExposure = True
     goCmd = 'go'
     waitForReadySignalTimeLim = 300
     goTimeMargin = 60
@@ -17,10 +19,17 @@ class LampsControl(QThread):
     # the blocking go returns once the pulse is over, so nothing is left burning when shutters close.
     stopWithShutter = False
 
-    def __init__(self, exp, lampsActor, threadName='lampsControl'):
+    def __init__(self, exp, lampsActor, threadName='lampsControl', doFinishExposure=None):
+        """doFinishExposure says whether this pulse is what the exposure is timed by.
 
+        A pulse that defines the exposure ends it once every such pulse has been sent; a
+        pulse that merely happens during it, such as IIS inside a science frame, leaves
+        the shutter to the commanded exposure time.  Defaults to the class contract.
+        """
         self.exp = exp
         self.lampsActor = lampsActor
+        self.doFinishExposure = self.finishesExposure if doFinishExposure is None else doFinishExposure
+        self.donePulsing = False
         self.cmdVar = None
         self.goSignal = False
         self.wentGo = False
@@ -109,8 +118,12 @@ class LampsControl(QThread):
             self.waitForGoSignal()
             # Ask lamp controller to pulse lamps with the configured timing.
             self._go(cmd)
-            # Lamp(s) have been pulsed, exposure can now finish immediately.
-            self.exp.finish(cmd)
+            self.donePulsing = True
+            # An illuminator still flashing has to be left alone, so the exposure ends
+            # only once every pulse it is timed by has been sent.
+            defining = self.exp.definingLampsThreads
+            if defining and all(thread.donePulsing for thread in defining):
+                self.exp.finish(cmd)
 
         except Exception as e:
             self.abort(cmd)
@@ -142,6 +155,8 @@ class LampsControl(QThread):
 
 class ShutterControlled(LampsControl):
     """ Placeholder to handle lamp cmd threading, in that class exposure time is controlled by shutters. """
+    # the shutters time the exposure, so the lamps never end it.
+    finishesExposure = False
     waitBeforeOpening = 2
     # lamps are lit for longer than the shutters stay open, so they are still burning when it closes.
     stopWithShutter = True
@@ -176,6 +191,10 @@ class ShutterControlled(LampsControl):
 
 
 class NoLamps(QThread):
+    # no pulse to wait on, so it never times the exposure.
+    finishesExposure = doFinishExposure = False
+    donePulsing = True
+
     def __init__(self, exp, threadName='noLampsControl'):
         self.exp = exp
         self.isReady = True
