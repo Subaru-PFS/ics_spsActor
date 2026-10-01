@@ -215,6 +215,16 @@ def test_shutter_timed_lamps_are_cut_every_exposure():
     assert res.stopped('pfilamps') == 1, 'a lamp outliving the shutters was left burning'
 
 
+def test_shutter_timing_wins_over_lamp_timing():
+    """iic sends doLamps along with doShutterTiming: the shutters still time the exposure."""
+    res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 doLamps doShutterTiming',
+                 prepare=dict(pfilamps=dict(neon=10 * EXPTIME)))
+    assert res.fileIds, 'no file produced'
+    [shutters] = res.sent('enu_sm1', 'shutters expose')
+    assert f'exptime={EXPTIME} ' in shutters, f'shutters not timed by the exposure: {shutters}'
+    assert res.firstAt('pfilamps', 'go') < res.firstAt('enu_sm1', 'shutters expose'), 'lamps fired after the shutters'
+
+
 def test_backgrounded_lamps_survive_until_the_last_exposure():
     res = expose(f'expose arc exptime={EXPTIME} cams=b1 visit=1 bckIlluminators=pfilamps',
                  background=dict(pfilamps=dict(hgcd=30)))

@@ -182,10 +182,10 @@ class ExposeCmd(object):
                 cls = partial(driftSlitLampExposure.Exposure, doLamps=doLamps)
             else:
                 cls = driftSlitExposure.Exposure
-        elif doLamps:
-            cls = lampsExposure.Exposure
         elif doShutterTiming:
             cls = lampsExposure.ShutterExposure
+        elif doLamps:
+            cls = lampsExposure.Exposure
         else:
             cls = exposure.Exposure
 
