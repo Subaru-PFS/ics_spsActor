@@ -41,6 +41,8 @@ class ExposeCmd(object):
             ('expose', f'dark <exptime> {expArgs} {windowingArgs}', self.doExposure),
             ('expose', f'bias {expArgs} {windowingArgs}', self.doExposure),
 
+            ('checkReady', f'{spsArgs} [@doScienceCheck] [@skipBiaCheck]', self.checkReady),
+
             ('erase', f'[<cam>] [<cams>]', self.doErase),
 
             ('exposure', 'abort <visit>', self.abort),
@@ -85,38 +87,69 @@ class ExposeCmd(object):
                                                       'groupName, sequenceType, sequenceName, sequenceComments)'),
                                         )
 
-    def doExposure(self, cmd):
-        def slitInHome(cams, cmd):
-            """Return True if all slits are in home position."""
-            notInHome = []
+    def slitsNotInHome(self, cams):
+        """Spectrographs of `cams` whose slit is not home, as 'smN=<position>'."""
+        notInHome = []
 
-            for specNum in set([cam.specNum for cam in cams]):
-                slitPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['slitPosition'].getValue()
+        for specNum in sorted(set([cam.specNum for cam in cams])):
+            slitPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['slitPosition'].getValue()
 
-                if slitPosition != 'home':
-                    notInHome.append(f'sm{specNum}={slitPosition}')
+            if slitPosition != 'home':
+                notInHome.append(f'sm{specNum}={slitPosition}')
 
+        return notInHome
+
+    def biasOn(self, cams):
+        """Spectrographs of `cams` whose bia is not off, as 'smN'."""
+        biaOn = []
+
+        for specNum in sorted(set([cam.specNum for cam in cams])):
+            biaStatus = self.actor.models[f'enu_sm{specNum}'].keyVarDict['bia'].getValue()
+
+            if biaStatus != 'off':
+                biaOn.append(f'sm{specNum}')
+
+        return biaOn
+
+    @staticmethod
+    def slitError(notInHome):
+        return f'SlitPositionError({" ".join(notInHome)})'
+
+    @staticmethod
+    def biaError(biaOn):
+        return f'Cannot proceed: BIA is ON for spectrographs {", ".join(biaOn)}. Please turn off before retrying.'
+
+    def notReady(self, cams, doScienceCheck, doBiaCheck):
+        """What stops `cams` from exposing, as messages; empty when they are ready."""
+        problems = []
+
+        if doScienceCheck:
+            notInHome = self.slitsNotInHome(cams)
             if notInHome:
-                cmd.fail(f'text="SlitPositionError({" ".join(notInHome)})"')
+                problems.append(self.slitError(notInHome))
 
-            return not len(notInHome)
-
-        def biaIsOff(cams, cmd):
-            """Return True if all bia are off."""
-            biaOn = []
-
-            for specNum in set([cam.specNum for cam in cams]):
-                biaStatus = self.actor.models[f'enu_sm{specNum}'].keyVarDict['bia'].getValue()
-
-                if biaStatus != 'off':
-                    biaOn.append(f'sm{specNum}')
-
+        if doBiaCheck:
+            biaOn = self.biasOn(cams)
             if biaOn:
-                cmd.fail(
-                    f'text="Cannot proceed: BIA is ON for spectrographs {", ".join(biaOn)}. Please turn off before retrying."')
+                problems.append(self.biaError(biaOn))
 
-            return not len(biaOn)
+        return problems
 
+    def checkReady(self, cmd):
+        """Check that the cameras are ready to expose, failing with every reason they are not."""
+        cmdKeys = cmd.cmd.keywords
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
+
+        problems = self.notReady(cams, doScienceCheck='doScienceCheck' in cmdKeys,
+                                 doBiaCheck='skipBiaCheck' not in cmdKeys)
+
+        if problems:
+            cmd.fail(f'text="{"; ".join(problems)}"')
+            return
+
+        cmd.finish()
+
+    def doExposure(self, cmd):
         cmdKeys = cmd.cmd.keywords
         cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
@@ -153,12 +186,9 @@ class ExposeCmd(object):
             cams = set(cams) - set(nircam)
             cmd.warn('text="ignoring nir cameras for windowed exposure."')
 
-        # science check boils down to checking slit position right now, but more to come.
-        if doScienceCheck and not slitInHome(cams, cmd=cmd):
-            return
-
-        # check that bia is off before exposing.
-        if doBiaCheck and not biaIsOff(cams, cmd):
+        problems = self.notReady(cams, doScienceCheck=doScienceCheck, doBiaCheck=doBiaCheck)
+        if problems:
+            cmd.fail(f'text="{problems[0]}"')
             return
 
         self.process(cmd, visit,
