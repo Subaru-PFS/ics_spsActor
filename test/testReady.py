@@ -2,8 +2,8 @@
 
 checkReady is sent before an exposure's lamps are warmed, so whatever stops the cameras
 from exposing is reported before a lamp is spent on them. Each scenario sets the state an
-enu reports, then checks what checkReady concludes; the last two check that `expose` still
-refuses on the same grounds when it is asked to check for itself.
+enu reports, then checks what checkReady concludes; the last two check that `expose` itself
+checks nothing, while still accepting the flags older clients send it.
 """
 
 import ics.utils.time as pfsTime
@@ -85,21 +85,18 @@ def test_slit_is_not_checked_without_science_check():
     assert not cmd.didFail, failure(cmd)
 
 
-def test_expose_still_refuses_a_slit_out_of_home():
-    def slitOut(sim, cmdSet):
+def test_expose_checks_nothing_itself():
+    def notReady(sim, cmdSet):
         sim.declareModel('enu_sm1').keyVarDict['slitPosition'].set('undef')
-
-    res = expose('expose object exptime=0.4 cams=b1 visit=1 doScienceCheck isLast', inject=slitOut)
-    assert res.cmd.didFail, 'exposed with the slit out of home'
-    assert 'SlitPositionError(sm1=undef)' in ' '.join(res.cmd.says('f'))
-    assert not res.sent('enu_sm1', 'shutters'), 'opened the shutters anyway'
-
-
-def test_expose_still_refuses_with_the_bia_on():
-    def biaOn(sim, cmdSet):
         sim.declareModel('enu_sm1').keyVarDict['bia'].set('on')
 
-    res = expose('expose object exptime=0.4 cams=b1 visit=1 isLast', inject=biaOn)
-    assert res.cmd.didFail, 'exposed with the bia on'
-    assert 'BIA is ON for spectrographs sm1' in ' '.join(res.cmd.says('f'))
-    assert not res.sent('enu_sm1', 'shutters'), 'opened the shutters anyway'
+    res = expose('expose object exptime=0.4 cams=b1 visit=1 doScienceCheck isLast', inject=notReady)
+    assert not res.cmd.didFail, ' '.join(res.cmd.says('f'))
+    assert res.fileIds, 'no file produced'
+    assert res.sent('enu_sm1', 'shutters'), 'never opened the shutters'
+
+
+def test_expose_still_accepts_skip_bia_check():
+    res = expose('expose object exptime=0.4 cams=b1 visit=1 skipBiaCheck isLast')
+    assert not res.cmd.didFail, ' '.join(res.cmd.says('f'))
+    assert res.fileIds, 'no file produced'

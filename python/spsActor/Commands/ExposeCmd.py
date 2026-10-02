@@ -27,6 +27,8 @@ class ExposeCmd(object):
         # passed a le   le argument, the parsed and typed command.
         #
         spsArgs = '[<cam>] [<cams>] [<specNum>] [<specNums>] [<arm>] [<arms>]'
+        # doScienceCheck and skipBiaCheck are accepted from clients that still send them, but
+        # expose checks nothing: checkReady does, ahead of the exposure.
         expArgs = (f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck] [@skipBiaCheck] '
                    f'[<bckIlluminators>] [@isLast]')
         lampsArgs = '[@doLamps] [@doShutterTiming]'
@@ -167,8 +169,6 @@ class ExposeCmd(object):
         doShutterTiming = 'doShutterTiming' in cmdKeys
         doIIS = 'doIIS' in cmdKeys
         doTest = 'doTest' in cmdKeys
-        doScienceCheck = 'doScienceCheck' in cmdKeys
-        doBiaCheck = 'skipBiaCheck' not in cmdKeys
         doSlideSlit = 'slideSlit' in cmdKeys
         slideSlitPixelRange = cmdKeys['slideSlit'].values if doSlideSlit else False
         bckIlluminators = cmdKeys['bckIlluminators'].values if 'bckIlluminators' in cmdKeys else None
@@ -185,11 +185,6 @@ class ExposeCmd(object):
         if len(nircam) and (blueWindow or redWindow):
             cams = set(cams) - set(nircam)
             cmd.warn('text="ignoring nir cameras for windowed exposure."')
-
-        problems = self.notReady(cams, doScienceCheck=doScienceCheck, doBiaCheck=doBiaCheck)
-        if problems:
-            cmd.fail(f'text="{problems[0]}"')
-            return
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, metadata=metadata,
