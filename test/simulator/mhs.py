@@ -126,9 +126,10 @@ class KeyVar(object):
 
 
 class Model(object):
-    """An actor model, namely its keyVarDict."""
+    """An actor model, namely its actor name and keyVarDict."""
 
-    def __init__(self, keys=()):
+    def __init__(self, actor, keys=()):
+        self.actor = actor
         self.keyVarDict = dict([(name, KeyVar(name)) for name in keys])
 
     def declare(self, name, value=None):
