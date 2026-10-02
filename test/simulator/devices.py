@@ -78,6 +78,7 @@ class Enu(Device):
         self.model.declare('shutters', 'none')
         self.model.declare('shutterTimings')
         self.model.declare('bia', 'off')
+        self.model.declare('slitPosition', 'home')
         self.model.declare('slitAtSpeed', False)
         self.finishNow = threading.Event()
         self.closedAt = None
