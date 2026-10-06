@@ -9,7 +9,7 @@ import spsActor.Commands.cmdList as sync
 import spsActor.utils.driftSlitExposure.exposure as driftSlitExposure
 import spsActor.utils.driftSlitExposure.lampExposure as driftSlitLampExposure
 from ics.utils.threading import singleShot
-from spsActor.utils import exposure, lampsExposure
+from spsActor.utils import exposure, flashExposure, lampsExposure
 
 reload(exposure)
 reload(sync)
@@ -17,6 +17,8 @@ reload(sync)
 
 class ExposeCmd(object):
     expTypes = ['bias', 'dark', 'object', 'arc', 'flat', 'domeflat']
+    # a flash has no visit, it is registered among the exposures under this key.
+    flashKey = 'flash'
 
     def __init__(self, actor):
         # This lets us access the rest of the actor.
@@ -42,6 +44,9 @@ class ExposeCmd(object):
             ('expose', f'domeflat <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
             ('expose', f'dark <exptime> {expArgs} {windowingArgs}', self.doExposure),
             ('expose', f'bias {expArgs} {windowingArgs}', self.doExposure),
+
+            ('flash', f'<exptime> {spsArgs} [@doLamps] [@doIIS] [<bckIlluminators>] [@isLast]', self.doFlash),
+            ('flash', '@(abort|finish)', self.endFlash),
 
             ('checkReady', f'{spsArgs} [@doScienceCheck] [@skipBiaCheck]', self.checkReady),
 
@@ -230,6 +235,66 @@ class ExposeCmd(object):
         finally:
             exp.exit()
             self.exp.pop(visit, None)
+
+    def doFlash(self, cmd):
+        """Open the shutters and pulse the prepared lamps, from pfilamps or iis, with no detector involved."""
+        cmdKeys = cmd.cmd.keywords
+        doLamps = 'doLamps' in cmdKeys
+        doIIS = 'doIIS' in cmdKeys
+
+        if doLamps == doIIS:
+            cmd.fail('text="flash with either doLamps or doIIS"')
+            return
+
+        cams = self.actor.spsConfig.keysToCam(cmdKeys)
+        exptime = cmdKeys['exptime'].values[0]
+        bckIlluminators = cmdKeys['bckIlluminators'].values if 'bckIlluminators' in cmdKeys else None
+        isLast = 'isLast' in cmdKeys
+
+        self.processFlash(cmd, exptime=exptime, cams=cams, doLamps=doLamps, doIIS=doIIS,
+                          bckIlluminators=bckIlluminators, isLast=isLast)
+
+    @singleShot
+    def processFlash(self, cmd, **kwargs):
+        """Run the flash in another thread."""
+        if ExposeCmd.flashKey in self.exp.keys():
+            cmd.fail('text="flash already ongoing"')
+            return
+
+        flash = flashExposure.Flash(self.actor, **kwargs)
+        self.exp[ExposeCmd.flashKey] = flash
+
+        try:
+            flash.waitForCompletion(cmd)
+
+            if flash.failures:
+                cmd.fail(f'text="{flash.failures.format()}"')
+            else:
+                cmd.finish('text="flash done"')
+
+        finally:
+            flash.exit()
+            self.exp.pop(ExposeCmd.flashKey, None)
+
+    def endFlash(self, cmd):
+        """Abort or finish the current flash, both closing the shutters now."""
+        cmdKeys = cmd.cmd.keywords
+
+        try:
+            flash = self.exp[ExposeCmd.flashKey]
+        except KeyError:
+            cmd.fail('text="no flash ongoing"')
+            return
+
+        # ending a flash by hand ends its run, so no illuminator run outlives it.
+        flash.isLast = True
+
+        if 'abort' in cmdKeys:
+            flash.abort(cmd)
+        else:
+            flash.finish(cmd)
+
+        cmd.finish('text="ending flash now !"')
 
     def doErase(self, cmd):
         """ Move multiple ccdMotors synchronously. """

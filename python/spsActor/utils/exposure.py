@@ -42,7 +42,7 @@ class SpecModuleExposure(QThread):
         QThread.__init__(self, exp.actor, self.specName)
 
         # create underlying exposure objects.
-        self.camExp = [factory(exp, cam) for cam in cams]
+        self.camExp = self.camExposures(cams)
 
         # creating shutter state object.
         self.shutterState = shutters.ShutterState(self)
@@ -88,6 +88,10 @@ class SpecModuleExposure(QThread):
     def syncThreadsToOpen(self):
         # if not syncSpectrograph, each sm is independent.
         return self.exp.runExp if self.exp.syncSpectrograph else self.runExp
+
+    def camExposures(self, cams):
+        """Exposure object of each camera."""
+        return [factory(self.exp, cam) for cam in cams]
 
     def currently(self, state):
         """Current camExp states."""
@@ -139,8 +143,10 @@ class SpecModuleExposure(QThread):
         shutterTime = self.exp.exptime + self.exp.iisShutterOverHead if shutterTime is None else shutterTime
 
         shutterMask = self.shutterMask()
+        # a flash has no visit to credit the shutter timings to.
+        visitArg = '' if self.exp.visit is None else f' visit={self.exp.visit}'
         cmdVar = self.exp.actor.crudeCall(cmd, actor=self.enuName,
-                                          cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask} visit={self.exp.visit}',
+                                          cmdStr=f'shutters expose exptime={shutterTime} shutterMask={shutterMask}{visitArg}',
                                           timeLim=shutterTime + SpecModuleExposure.EnuExposeTimeMargin)
 
         if cmdVar.didFail:
