@@ -47,10 +47,12 @@ class Sim(object):
         spread between modules is what the extra reads absorb.
     iisGoLatency : `float`
         seconds between the iis go and its lamp lighting up.
+    iisWarmup : `float`
+        seconds iis takes to answer waitForReadySignal, its lamps warming up.
     """
 
     def __init__(self, specNums=(1,), lightSource='pfi', site='S', h4ReadTime=0.35, irpRatio=4,
-                 ccdReadTime=0.05, hxStartup=None, iisGoLatency=0):
+                 ccdReadTime=0.05, hxStartup=None, iisGoLatency=0, iisWarmup=None):
         self.bcast = Cmd('bcast')
         self.logger = logging.getLogger('sim.sps')
         self.models = dict()
@@ -89,7 +91,7 @@ class Sim(object):
                 lampsActor = specModule.lightSource.lampsActor
                 self.attach(Lamps(self, lampsActor, serialized=lampsActor == 'pfilamps'))
 
-        self.attach(Lamps(self, 'iis', goLatency=iisGoLatency))
+        self.attach(Lamps(self, 'iis', goLatency=iisGoLatency, warmupTime=iisWarmup))
 
     def attach(self, device):
         self.devices.setdefault(device.name, device)

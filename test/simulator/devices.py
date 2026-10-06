@@ -88,7 +88,8 @@ class Enu(Device):
         if not args.pop('expose', False):
             return CmdVar()
 
-        exptime, visit = float(args['exptime']), int(args['visit'])
+        # enu credits the shutter timings to visit -1 when given none.
+        exptime, visit = float(args['exptime']), int(args.get('visit', -1))
         self.finishNow.clear()
 
         startedAt = pfsTime.timestamp()
@@ -223,8 +224,9 @@ class Lamps(Device):
 
     warmupTime = 0.05
 
-    def __init__(self, sim, name, goLatency=0, serialized=False):
+    def __init__(self, sim, name, goLatency=0, warmupTime=None, serialized=False):
         Device.__init__(self, sim, name, serialized=serialized)
+        self.warmupTime = Lamps.warmupTime if warmupTime is None else warmupTime
         self.prepared = dict()
         self.wentGo = False
         self.stopped = 0
@@ -246,7 +248,7 @@ class Lamps(Device):
 
     def do_waitForReadySignal(self, args, timeLim):
         self.sim.failIfRequested(self.name, 'waitForReadySignal')
-        pfsTime.sleep.millisec(int(Lamps.warmupTime * 1000))
+        pfsTime.sleep.millisec(int(self.warmupTime * 1000))
         return CmdVar()
 
     def do_go(self, args, timeLim):
