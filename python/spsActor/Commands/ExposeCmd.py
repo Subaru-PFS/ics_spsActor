@@ -118,9 +118,25 @@ class ExposeCmd(object):
 
         return biaOn
 
+    def rdasNotDefined(self, cams):
+        """Spectrographs of `cams` with a red camera whose RDA is neither low nor med, as 'smN=<position>'."""
+        notDefined = []
+
+        for specNum in sorted(set([cam.specNum for cam in cams if cam.arm in 'rm'])):
+            rdaPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['rexm'].getValue()
+
+            if rdaPosition not in ('low', 'med'):
+                notDefined.append(f'sm{specNum}={rdaPosition}')
+
+        return notDefined
+
     @staticmethod
     def slitError(notInHome):
         return f'SlitPositionError({" ".join(notInHome)})'
+
+    @staticmethod
+    def rdaError(notDefined):
+        return f'RdaPositionError({" ".join(notDefined)})'
 
     @staticmethod
     def biaError(biaOn):
@@ -134,6 +150,10 @@ class ExposeCmd(object):
             notInHome = self.slitsNotInHome(cams)
             if notInHome:
                 problems.append(self.slitError(notInHome))
+
+        notDefined = self.rdasNotDefined(cams)
+        if notDefined:
+            problems.append(self.rdaError(notDefined))
 
         if doBiaCheck:
             biaOn = self.biasOn(cams)

@@ -75,6 +75,23 @@ def test_every_spectrograph_is_checked():
     assert 'spectrographs sm2' in failure(cmd), failure(cmd)
 
 
+def test_rda_undefined_is_not_ready():
+    cmd = checkReady('checkReady cams=r1', state=dict(enu_sm1=dict(rexm='undef')))
+    assert cmd.didFail, 'ready with the rda undefined'
+    assert 'RdaPositionError(sm1=undef)' in failure(cmd), failure(cmd)
+
+
+def test_rda_is_checked_for_medium_resolution_cameras():
+    cmd = checkReady('checkReady cams=m1', state=dict(enu_sm1=dict(rexm='error')))
+    assert cmd.didFail, 'ready with the rda in error'
+    assert 'RdaPositionError(sm1=error)' in failure(cmd), failure(cmd)
+
+
+def test_rda_is_not_checked_without_red_camera():
+    cmd = checkReady('checkReady cams=b1', state=dict(enu_sm1=dict(rexm='undef')))
+    assert not cmd.didFail, failure(cmd)
+
+
 def test_skip_bia_check_ignores_the_bia():
     cmd = checkReady('checkReady cams=b1 skipBiaCheck', state=dict(enu_sm1=dict(bia='on')))
     assert not cmd.didFail, failure(cmd)
