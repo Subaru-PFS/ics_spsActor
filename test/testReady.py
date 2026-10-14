@@ -87,6 +87,27 @@ def test_rda_is_checked_for_medium_resolution_cameras():
     assert 'RdaPositionError(sm1=error)' in failure(cmd), failure(cmd)
 
 
+def test_only_the_bia_is_checked_for_bias_dark_or_test():
+    for exptype in ('bias', 'dark', 'test'):
+        cmd = checkReady(f'checkReady {exptype} cams=r1 doScienceCheck',
+                         state=dict(enu_sm1=dict(rexm='undef', slitPosition='undef')))
+        assert not cmd.didFail, f'{exptype}: {failure(cmd)}'
+
+
+def test_rda_is_checked_for_exposures_receiving_light():
+    for exptype in ('object', 'arc', 'flat', 'domeflat'):
+        cmd = checkReady(f'checkReady {exptype} cams=r1', state=dict(enu_sm1=dict(rexm='undef')))
+        assert cmd.didFail, f'{exptype}: ready with the rda undefined'
+        assert 'RdaPositionError(sm1=undef)' in failure(cmd), failure(cmd)
+
+
+def test_bia_is_checked_for_bias_dark_and_test():
+    for exptype in ('bias', 'dark', 'test'):
+        cmd = checkReady(f'checkReady {exptype} cams=r1', state=dict(enu_sm1=dict(bia='on')))
+        assert cmd.didFail, f'{exptype}: ready with the bia on'
+        assert 'BIA is ON for spectrographs sm1' in failure(cmd), failure(cmd)
+
+
 def test_rda_is_not_checked_without_red_camera():
     cmd = checkReady('checkReady cams=b1', state=dict(enu_sm1=dict(rexm='undef')))
     assert not cmd.didFail, failure(cmd)

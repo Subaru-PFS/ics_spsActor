@@ -48,7 +48,8 @@ class ExposeCmd(object):
             ('flash', f'<exptime> {spsArgs} [@doLamps] [@doIIS] [<bckIlluminators>] [@isLast]', self.doFlash),
             ('flash', '@(abort|finish)', self.endFlash),
 
-            ('checkReady', f'{spsArgs} [@doScienceCheck] [@skipBiaCheck]', self.checkReady),
+            ('checkReady', f'[@(bias|dark|test|object|arc|flat|domeflat)] {spsArgs} [@doScienceCheck] [@skipBiaCheck]',
+             self.checkReady),
 
             ('erase', f'[<cam>] [<cams>]', self.doErase),
 
@@ -122,7 +123,7 @@ class ExposeCmd(object):
         """Spectrographs of `cams` with a red camera whose RDA is neither low nor med, as 'smN=<position>'."""
         notDefined = []
 
-        for specNum in sorted(set([cam.specNum for cam in cams if cam.arm in 'rm'])):
+        for specNum in sorted(set([cam.specNum for cam in cams if cam.arm in ('r', 'm')])):
             rdaPosition = self.actor.models[f'enu_sm{specNum}'].keyVarDict['rexm'].getValue()
 
             if rdaPosition not in ('low', 'med'):
@@ -142,7 +143,7 @@ class ExposeCmd(object):
     def biaError(biaOn):
         return f'Cannot proceed: BIA is ON for spectrographs {", ".join(biaOn)}. Please turn off before retrying.'
 
-    def notReady(self, cams, doScienceCheck, doBiaCheck):
+    def notReady(self, cams, doScienceCheck, doBiaCheck, doRdaCheck=True):
         """What stops `cams` from exposing, as messages; empty when they are ready."""
         problems = []
 
@@ -151,9 +152,10 @@ class ExposeCmd(object):
             if notInHome:
                 problems.append(self.slitError(notInHome))
 
-        notDefined = self.rdasNotDefined(cams)
-        if notDefined:
-            problems.append(self.rdaError(notDefined))
+        if doRdaCheck:
+            notDefined = self.rdasNotDefined(cams)
+            if notDefined:
+                problems.append(self.rdaError(notDefined))
 
         if doBiaCheck:
             biaOn = self.biasOn(cams)
@@ -163,12 +165,20 @@ class ExposeCmd(object):
         return problems
 
     def checkReady(self, cmd):
-        """Check that the cameras are ready to expose, failing with every reason they are not."""
+        """Check that the cameras are ready to expose, failing with every reason they are not.
+
+        The slit and the RDA are only checked for an exposure taking spectra, neither a bias, a dark nor a test; without
+        an exposure type, it is taken as one. The bia is checked for every exposure, unless skipBiaCheck.
+        """
         cmdKeys = cmd.cmd.keywords
         cams = self.actor.spsConfig.keysToCam(cmdKeys)
+        isSpectra = not any(exptype in cmdKeys for exptype in ('bias', 'dark', 'test'))
 
-        problems = self.notReady(cams, doScienceCheck='doScienceCheck' in cmdKeys,
-                                 doBiaCheck='skipBiaCheck' not in cmdKeys)
+        # only do science check if exposure is measuring spectra
+        doScienceCheck = 'doScienceCheck' in cmdKeys and isSpectra
+        doBiaCheck = 'skipBiaCheck' not in cmdKeys
+
+        problems = self.notReady(cams, doScienceCheck=doScienceCheck, doBiaCheck=doBiaCheck, doRdaCheck=isSpectra)
 
         if problems:
             cmd.fail(f'text="{"; ".join(problems)}"')
