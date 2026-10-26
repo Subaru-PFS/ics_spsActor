@@ -193,6 +193,7 @@ class SpecModuleExposure(QThread):
             self.exp.abort(cmd, reason=str(e))
             return
 
+        self.exp.declareShutterTimings(self, exptime=exptime, dateobs=dateobs)
         self.read(cmd, visit=visit, exptime=exptime, dateobs=dateobs)
 
     def shuttersOpenCB(self):
@@ -296,6 +297,9 @@ class Exposure(object):
     # pulse to absorb the iisActor go-cmd round-trip, for an exposure the pulse is timed
     # by. A science frame is timed by its own exptime and gets no margin.
     iisGoMargin = 10
+    # Seconds between the shutter timings and fiberIllumination, for the lamps actors to report when their
+    # lamps went off.
+    illuminationStatusDelay = 2
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
                  redWindow=False, expTimeOverHead=0, bckIlluminators=None, isLast=False, **kwargs):
@@ -324,6 +328,11 @@ class Exposure(object):
         self.doAbort = False
         self.doFinish = False
         self.didGenShutterKey = dict(open=False, close=False)
+        # (start timestamp, exptime) of each spectrograph module, keyed by specNum.
+        self.shutterTimings = dict()
+        self.didGenExposureTimings = False
+        self.didScheduleIlluminationStatus = False
+        self.timingsLock = threading.Lock()
 
         self.failures = exception.Failures()
         # An object frame is timed by the observer, not by the lamp: there the iis pulse
@@ -476,7 +485,47 @@ class Exposure(object):
             # Generate fiberIllumination keyword, e.g. was IIS used etc...
             if state == 'close':
                 self.stopIlluminators(self.cmd)
-                reactor.callLater(1, self.genIlluminationStatus)
+                self.scheduleIlluminationStatus()
+
+    def declareShutterTimings(self, specModule, exptime, dateobs):
+        """Record when the shutters of specModule integrated, as dateobs and exptime.
+
+        Once every spectrograph module has, generate exposureTimings: the earliest dateobs and the latest
+        dateobs + exptime, in UTC.
+        """
+        with self.timingsLock:
+            start = pfsTime.Time.fromisoformat(dateobs).timestamp()
+            self.shutterTimings[specModule.specNum] = (start, exptime)
+
+            if self.didGenExposureTimings or len(self.shutterTimings) < len(self.smThreads):
+                return
+
+            self.didGenExposureTimings = True
+
+        startedAt = min(start for start, duration in self.shutterTimings.values())
+        endedAt = max(start + duration for start, duration in self.shutterTimings.values())
+
+        def utcIso(timestamp):
+            return pfsTime.convert.datetime_from_timestamp(timestamp).strftime('%Y-%m-%dT%H:%M:%S.%fZ')
+
+        self.cmd.inform(f'exposureTimings={self.visit},{qstr(utcIso(startedAt))},{qstr(utcIso(endedAt))}')
+        self.scheduleIlluminationStatus()
+
+    def scheduleIlluminationStatus(self):
+        """Generate fiberIllumination once the shutters are closed and every module declared its timings.
+
+        The illumination check compares the lamp keywords with each enu shutterTimings, which come after the
+        shutters close: the delay leaves time for the lamps actors to report.
+        """
+        with self.timingsLock:
+            isReady = self.didGenShutterKey['close'] and self.didGenExposureTimings
+            if self.didScheduleIlluminationStatus or not isReady:
+                return
+
+            self.didScheduleIlluminationStatus = True
+
+        # callLater is not thread-safe, and this also runs in the spectrograph module threads.
+        reactor.callFromThread(reactor.callLater, self.illuminationStatusDelay, self.genIlluminationStatus)
 
     def stopIlluminators(self, cmd):
         """Declare that the fibers do not need to be lit anymore.
