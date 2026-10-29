@@ -65,6 +65,7 @@ class HxExposure(QThread):
         self.waitForRampCmdReturn = True
 
         self.wipedAt = None
+        self.lastRead = 0
         self.rampVar = None
         self.readVar = None
         self.rampTiming = dict(maxResetEndTime=np.inf)
@@ -176,6 +177,9 @@ class HxExposure(QThread):
         # track h4 state.
         self.actor.bcast.debug(f'text="{self.hx} {visit} {nRamp} {nGroup} {nRead}"')
 
+        if nGroup == 1:
+            self.lastRead = nRead
+
         if nGroup == 0:
             self.states.append('reset')
 
@@ -226,7 +230,8 @@ class HxExposure(QThread):
                 self.wipedAt = pfsTime.timestamp()
 
             dateobs = pfsTime.convert.datetime_to_isoformat(pfsTime.convert.datetime_from_timestamp(self.wipedAt))
-            self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.nRead0 * self.readTime)
+            # the reads actually taken, the ramp may have been finished early.
+            self.keepShutterKeys(None, visit, dateobs=dateobs, exptime=self.lastRead * self.readTime)
 
         self.readVar = keyVar
 

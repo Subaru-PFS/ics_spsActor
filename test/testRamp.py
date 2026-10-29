@@ -4,6 +4,8 @@ Times run at 1:20: an IRP4 read is 0.35 s instead of 6.924 s, an IRP1 read 0.543
 of 10.857 s, a full-frame ccd readout 2 s instead of 40 s.  An H4 read ends at the times
 the simulated device records; it started one read time earlier.
 """
+import threading
+
 from testExposure import expose
 
 IRP4, IRP1 = dict(h4ReadTime=0.35, irpRatio=4), dict(h4ReadTime=0.543, irpRatio=1)
@@ -103,3 +105,70 @@ def test_dark_ramp_is_sized_to_the_dark_and_left_alone():
 def test_windowed_exposure_takes_no_h4():
     res = expose('expose object exptime=1.0 cams=b1,n1 visit=1 window=500,1000', ccdReadTime=CCD_READ, **IRP4)
     assert not res.sent('hx_n1'), 'a windowed exposure started an H4 ramp'
+
+
+def test_shutterless_object_ramp_leaves_the_shutters_alone():
+    res = expose('expose object exptime=1.0 cams=n1 visit=1 noShutter isLast', **IRP4)
+    assert res.fileIds and 'n1' in res.fileIds, res.fileIds
+    assert not res.sent('enu_sm1', 'shutters'), res.sent('enu_sm1', 'shutters')
+
+    [spsVisit] = [kwargs for table, kwargs in res.sim.inserted if table == 'sps_visit']
+    assert spsVisit['exp_type'] == 'object', spsVisit
+
+
+def test_shutterless_object_ramp_is_sized_like_an_object_ramp():
+    res = expose('expose object exptime=1.0 cams=n1 visit=1 noShutter isLast', **IRP4)
+    assert plannedReads(res, 'n1') == int(1.0 // 0.35) + 3 + 3, plannedReads(res, 'n1')
+
+
+def test_shutterless_exposure_refuses_ccds():
+    res = expose('expose object exptime=1.0 cams=b1,n1 visit=1 noShutter isLast', **IRP4)
+    assert res.cmd.didFail, 'a shutterless exposure was taken with a ccd'
+    assert 'n cameras only' in ' '.join(res.cmd.says('f')), res.cmd.says('f')
+    assert not res.sent('ccd_b1') and not res.sent('hx_n1'), 'something was exposed'
+
+
+def duringRamp(what, cam='n1', after=1.0, visit=1):
+    """Arm an `sps exposure abort|finish` to land `after` seconds into the ramp of `cam`."""
+
+    def inject(sim, cmdSet):
+        send = lambda: cmdSet.call(f'exposure {what} visit={visit}')
+        sim.onCommand(f'hx_{cam}', 'ramp', lambda: threading.Timer(after, send).start())
+
+    return inject
+
+
+def test_finishing_a_shutterless_ramp_ends_it_early_and_keeps_the_data():
+    res = expose('expose object exptime=10.0 cams=n1 visit=1 noShutter isLast', inject=duringRamp('finish'), **IRP4)
+    hx = res.sim.devices['hx_n1']
+    assert not res.cmd.didFail, res.cmd.says('f')
+    assert res.fileIds and 'n1' in res.fileIds, 'early finish discarded the ramp'
+    assert hx.finishes and hx.finishes[0][1], 'the ramp was never told to stop'
+    assert len(hx.readsAt) < plannedReads(res, 'n1') / 2, f'{len(hx.readsAt)} reads of {plannedReads(res, "n1")}'
+
+    [spsExposure] = [kwargs for table, kwargs in res.sim.inserted if table == 'sps_exposure']
+    assert abs(spsExposure['exptime'] - len(hx.readsAt) * 0.35) < 0.01, (spsExposure['exptime'], len(hx.readsAt))
+
+
+def test_aborting_a_shutterless_ramp_ends_it_early_and_keeps_the_data():
+    res = expose('expose object exptime=10.0 cams=n1 visit=1 noShutter isLast', inject=duringRamp('abort'), **IRP4)
+    hx = res.sim.devices['hx_n1']
+    assert res.fileIds and 'n1' in res.fileIds, 'abort discarded the ramp'
+    assert hx.finishes and hx.finishes[0][1], 'the ramp was never told to stop'
+    assert len(hx.readsAt) < plannedReads(res, 'n1') / 2, f'{len(hx.readsAt)} reads of {plannedReads(res, "n1")}'
+
+
+def test_finishing_a_dark_ramp_ends_it_early_with_its_exptime():
+    res = expose('expose dark exptime=10.0 cams=n1 visit=1', inject=duringRamp('finish'), **IRP4)
+    hx = res.sim.devices['hx_n1']
+    assert res.fileIds and 'n1' in res.fileIds, 'early finish discarded the dark'
+    assert len(hx.readsAt) < plannedReads(res, 'n1') / 2, f'{len(hx.readsAt)} reads of {plannedReads(res, "n1")}'
+
+    [spsExposure] = [kwargs for table, kwargs in res.sim.inserted if table == 'sps_exposure']
+    assert abs(spsExposure['exptime'] - len(hx.readsAt) * 0.35) < 0.01, (spsExposure['exptime'], len(hx.readsAt))
+
+
+def test_dark_ramp_left_alone_keeps_its_planned_exptime():
+    res = expose('expose dark exptime=1.0 cams=n1 visit=1', **IRP4)
+    [spsExposure] = [kwargs for table, kwargs in res.sim.inserted if table == 'sps_exposure']
+    assert abs(spsExposure['exptime'] - plannedReads(res, 'n1') * 0.35) < 0.01, spsExposure['exptime']
