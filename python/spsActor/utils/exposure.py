@@ -626,7 +626,7 @@ class Exposure(object):
 
 
 class DarkExposure(Exposure):
-    """DarkExposure object."""
+    """Exposure that leaves the shutters alone: biases, darks and noShutter exposures."""
 
     def __init__(self, *args, **kwargs):
         Exposure.__init__(self, *args, **kwargs)

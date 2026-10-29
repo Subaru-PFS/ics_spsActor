@@ -38,7 +38,7 @@ class ExposeCmd(object):
         self.exp = dict()
 
         self.vocab = [
-            ('expose', f'object <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
+            ('expose', f'object <exptime> {expArgs} [@doIIS] [@noShutter] {windowingArgs}', self.doExposure),
             ('expose', f'flat <exptime> {expArgs} {lampsArgs} [@doIIS] [<slideSlit>] {windowingArgs}', self.doExposure),
             ('expose', f'arc <exptime> {expArgs} {lampsArgs} [@doIIS] {windowingArgs}', self.doExposure),
             ('expose', f'domeflat <exptime> {expArgs} [@doIIS] {windowingArgs}', self.doExposure),
@@ -190,6 +190,12 @@ class ExposeCmd(object):
         cmdKeys = cmd.cmd.keywords
         cams = self.actor.spsConfig.keysToCam(cmdKeys)
 
+        # without shutters, only an H4 ramp can tell the light it integrates.
+        noShutter = 'noShutter' in cmdKeys
+        if noShutter and any(cam.arm != 'n' for cam in cams):
+            cmd.fail('text="noShutter exposures take n cameras only"')
+            return
+
         exptype = None
         blueWindow = redWindow = False
 
@@ -224,18 +230,19 @@ class ExposeCmd(object):
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, metadata=metadata,
                      doShutterTiming=doShutterTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
+                     noShutter=noShutter,
                      blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange,
                      bckIlluminators=bckIlluminators, isLast=isLast)
 
     @singleShot
-    def process(self, cmd, visit, exptype, doLamps, doShutterTiming, doSlideSlit, doIIS, **kwargs):
+    def process(self, cmd, visit, exptype, doLamps, doShutterTiming, doSlideSlit, doIIS, noShutter=False, **kwargs):
         """Process exposure in another thread """
 
         if visit in self.exp.keys():
             cmd.fail(f'text="exposure(visit={visit}) already ongoing"')
             return
 
-        if exptype in ['bias', 'dark']:
+        if exptype in ['bias', 'dark'] or noShutter:
             cls = exposure.DarkExposure
         elif doSlideSlit:
             if doLamps or doIIS:
