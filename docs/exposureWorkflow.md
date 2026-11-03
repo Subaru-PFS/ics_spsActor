@@ -103,7 +103,7 @@ regardless of config.
 An H4 has no wipe and no read. It runs a ramp of `nRead` reads and writes its own file;
 spsActor cannot stop it mid-read, only ask it to stop after the current one. The code
 papers over the difference with three aliases
-([hxExposure.py:93-97](../python/spsActor/utils/hxExposure.py#L93-L97)):
+([hxExposure.py:101-105](../python/spsActor/utils/hxExposure.py#L101-L105)):
 
 ```python
 # gotcha to pretend this is a ccd.
@@ -171,29 +171,35 @@ their readout; the count is a ceiling, since the ramp is told when to stop.
 `declareFinalRead()` only sets `doFinalize`, since it is called from the reactor thread,
 which must not block. Who calls it depends on the exposure:
 
-- **NIR arms only**: `shuttersCloseCB`, when the shutters close.
+- **NIR arms only**: `shuttersCloseCB`, when the shutters close, passing that time as
+  `lightOffAt`.
 - **With ccds**: `Exposure.ccdReadProgress`, once the slowest ccd's `readRows` reaches
   `finalReadAtCcdRows` — 55% at IRP1, 80% at IRP4. A ccd that has finished, failed or been
   cleared counts as read. The ramp ends one to two reads later, which those thresholds put
   at the end of the ccd readout; ending it sooner gains nothing, since the exposure waits
   for the ccds anyway.
 
-The next `hxread` callback then decides what to do with the reads that are left
-([hxExposure.py:194-203](../python/spsActor/utils/hxExposure.py#L194-L203)):
+The next `hxread` callbacks then land the ramp
+([hxExposure.py:223-233](../python/spsActor/utils/hxExposure.py#L223-L233)):
 
 ```mermaid
 flowchart TD
     Close["shutters close<br/>NIR arms only"] --> Flag["declareFinalRead: doFinalize = True"]
     Rows["slowest ccd at 55% / 80% of its rows<br/>with ccds"] --> Flag
-    Flag --> Next["next hxread callback"]
-    Next --> Left{"reads left?"}
-    Left -->|"no"| Natural["ramp ends on its own"]
-    Left -->|"more than 1 + nExtraRead"| Stop["ramp finish stopRamp<br/>truncate now"]
-    Left -->|"only the last few"| Finish["ramp finish<br/>let it run out"]
+    Flag --> Next["next hxread callback, read N"]
+    Next --> Dark{"read N+1 started<br/>after lightOffAt?"}
+    Dark -->|"no"| Next
+    Dark -->|"yes"| Stop["ramp finish stopRamp<br/>ends after N+1"]
 ```
 
-The asymmetry is deliberate: truncating a ramp that is nearly done buys nothing and risks
-losing the trailing read that brackets the signal.
+`hxread` for read N comes once the read is written, about 1.8 s after it ended, when read
+N+1 is already under way; `stopRamp` ends the ramp after that read. The last read has to
+start with the light off, and N+1 may have started before the shutters closed: read 1
+starts at `read0Time` of the hx `readTimes` keyword and the others follow every
+`readTime`, so the ramp is only stopped once the read under way started after
+`lightOffAt`, with a guard of 0.1 read. With ccds, the final read is declared long after
+the light is gone, so the ramp is stopped after the read under way. The planned number of
+reads plays no part: it is only a ceiling, which the ramp reaches if it is never stopped.
 
 ## 5. Lamps: when the go is sent
 
@@ -252,6 +258,7 @@ so the exposure runs as a plain one and is merely *told* which illuminators are 
 | `enu_smN shutters` | `ShutterState.callback` | `shuttersOpenCB` on open, `shuttersCloseCB` on open-then-close |
 | `ccd_XN exposureState` | `CcdExposure.exposureState` | records the states that make up `wiped` |
 | `ccd_XN readRows` | `CcdExposure.readRowsCB` | readout progress, which ends the H4 ramps of an exposure with ccds |
+| `hx_nN readTimes` | `HxExposure.readTimesCB` | when read 1 starts, to tell which read started in the dark |
 | `hx_nN hxread` | `HxExposure.hxReadCB` | `reset` / `integrating` / `idle`, and lands the ramp |
 | `hx_nN filename` | `HxExposure.newFileNameCB` | marks the H4 storable |
 

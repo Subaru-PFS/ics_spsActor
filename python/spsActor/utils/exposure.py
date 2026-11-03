@@ -211,7 +211,7 @@ class SpecModuleExposure(QThread):
         # Declare final read, that will call finishRamp on the next hxRead callback.
         # With ccds exposed, the ramp reads on through their readout, see Exposure.ccdReadProgress.
         if self.hxExposure and not self.exp.hasCcd:
-            self.hxExposure.declareFinalRead()
+            self.hxExposure.declareFinalRead(lightOffAt=pfsTime.timestamp())
 
     def iisIlluminated(self):
         """Check if iis was illuminated during that visit."""

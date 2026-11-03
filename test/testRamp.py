@@ -47,6 +47,17 @@ def test_nir_only_ramp_is_finished_at_shutter_close():
     assert closedAt <= hx.finishes[0][0] <= closedAt + 2 * hx.readTime, 'finished away from the shutter close'
 
 
+def test_nir_only_ramp_ends_on_a_read_started_after_shutter_close():
+    """hxread comes once the read is written, here 0.3 read after it ended: the shutter may then close after
+    the read under way started, which cannot be the last one. Exposure times sweep the close across a read."""
+    for exptime in (1.0, 1.07, 1.14, 1.21, 1.28):
+        res = expose(f'expose object exptime={exptime} cams=n1 visit=1 isLast', hxReadLatency=0.3 * 0.35, **IRP4)
+        hx, closedAt = res.sim.devices['hx_n1'], res.sim.devices['enu_sm1'].closedAt
+        dark = readsFullyAfter(hx, closedAt)
+        assert 1 <= dark <= 2, f'exptime {exptime}: {dark} read(s) started after shutter close'
+        assert len(hx.readsAt) < plannedReads(res, 'n1'), f'exptime {exptime}: the ramp ran to its ceiling'
+
+
 def test_mixed_ramp_reads_through_the_ccd_readout():
     res = expose('expose object exptime=1.0 cams=b1,n1 visit=1 isLast', ccdReadTime=CCD_READ, **IRP4)
     hx, ccd = res.sim.devices['hx_n1'], res.sim.devices['ccd_b1']
@@ -73,10 +84,25 @@ def test_mixed_ramp_threshold_follows_irp():
     assert finishedAt < at80, 'IRP1 waited for 80%'
 
 
-def test_iis_flat_leaves_an_unlit_difference_after_the_lamp():
+def test_mixed_ramp_ahead_of_another_still_ends_with_the_ccds():
+    """INSTRM-3091: an H4 that started up to two reads before the slowest one sees the finish
+    closer to its planned end; it must still stop at its next read, not run to that end."""
+    for lead in (0.2, 0.5, 0.8, 1.1, 1.4, 1.7, 2.0):
+        res = expose('expose object exptime=1.0 cams=b1,n1,b2,n2 visit=1 isLast', specNums=(1, 2),
+                     hxStartup={1: 0.05, 2: 0.05 + lead * 0.35}, ccdReadTime=CCD_READ, **IRP4)
+        ccdDone = max(res.sim.devices[ccd].rowsAt[-1][0] for ccd in ('ccd_b1', 'ccd_b2'))
+
+        for cam in ('n1', 'n2'):
+            hx = res.sim.devices[f'hx_{cam}']
+            assert hx.finishes, f'lead {lead}: {cam} was never told to finish'
+            assert hx.readsAt[-1] - ccdDone <= 2 * hx.readTime, \
+                f'lead {lead}: {cam} ended {hx.readsAt[-1] - ccdDone:+.2f}s after the ccd readout'
+
+
+def test_iis_flat_leaves_a_dark_read_after_the_lamp():
     """INSTRM-3024: n1 reaches its first read 1.2 reads before n2 and waits for it, and the
-    iis lamp lights 4 s (0.2 s here) after its go; one full difference must still follow
-    the lamp going out, on every camera."""
+    iis lamp lights 4 s (0.2 s here) after its go; one full read must still follow the lamp
+    going out, on every camera."""
     res = expose('expose flat exptime=1.5 cams=n1,n2 visit=1 doIIS isLast', specNums=(1, 2),
                  prepare=dict(iis=dict(halogen=1.5)), hxStartup={1: 0.05, 2: 0.05 + 1.2 * 0.35},
                  iisGoLatency=0.2, **IRP4)
@@ -85,7 +111,7 @@ def test_iis_flat_leaves_an_unlit_difference_after_the_lamp():
 
     for cam in ('n1', 'n2'):
         after = readsFullyAfter(res.sim.devices[f'hx_{cam}'], offAt)
-        assert after >= 2, f'{cam}: {after} read(s) after the lamp went out, an unlit difference needs 2'
+        assert after >= 1, f'{cam}: no read started after the lamp went out'
 
 
 def test_ccd_read_failure_still_ends_the_mixed_ramp():

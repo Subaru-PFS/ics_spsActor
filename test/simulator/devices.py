@@ -7,10 +7,16 @@ keyword traffic it would see on the summit, at a scale of a second rather than a
 """
 
 import threading
+import time
 
 import ics.utils.time as pfsTime
 
 from .mhs import CmdVar
+
+
+def sleepUntil(timestamp):
+    """Sleep until the given timestamp, so that periodic events do not drift."""
+    time.sleep(max(0, timestamp - pfsTime.timestamp()))
 
 
 def isoNow(timestamp=None):
@@ -171,17 +177,19 @@ class Hx(Device):
     assertions read back.
     """
 
-    def __init__(self, sim, cam, readTime, irpRatio, startupTime=0.05):
+    def __init__(self, sim, cam, readTime, irpRatio, startupTime=0.05, readLatency=0):
         Device.__init__(self, sim, f'hx_{cam}')
         self.cam = cam
         self.readTime = readTime
         self.startupTime = startupTime
+        self.readLatency = readLatency
         self.readsAt = []
         self.finishes = []
         self.nread = None
         self.stopAfter = None
         self.model.declare('readTime', readTime)
         self.model.declare('irp', [bool(irpRatio), irpRatio, irpRatio])
+        self.model.declare('readTimes')
         self.model.declare('hxread')
         self.model.declare('filename')
 
@@ -193,19 +201,30 @@ class Hx(Device):
         self.readsAt, self.finishes, self.stopAfter = [], [], None
 
         pfsTime.sleep.millisec(int(self.startupTime * 1000))
-        pfsTime.sleep.millisec(int(self.readTime * 1000))
-        self.key('hxread').set([visit, 1, 0, 1])
+        resetAt = pfsTime.timestamp()
+        read0At = resetAt + self.readTime
+        self.key('readTimes').set([visit, isoNow(resetAt), isoNow(read0At), self.readTime])
+
+        sleepUntil(read0At)
+        written = self.written([visit, 1, 0, 1])
 
         for read in range(1, self.nread + 1):
-            pfsTime.sleep.millisec(int(self.readTime * 1000))
+            sleepUntil(read0At + read * self.readTime)
             self.readsAt.append(pfsTime.timestamp())
-            self.key('hxread').set([visit, 1, 1, read])
+            written = self.written([visit, 1, 1, read])
 
             if self.stopAfter is not None and read >= self.stopAfter:
                 break
 
+        written.join()
         self.key('filename').set(f'/data/raw/2026-09-24/ramps/PFSB{visit:06d}{self.cam.specNum}3.fits')
         return CmdVar()
+
+    def written(self, hxread):
+        """Publish hxread once the read is written, readLatency after it ended."""
+        timer = threading.Timer(self.readLatency, self.key('hxread').set, args=(hxread,))
+        timer.start()
+        return timer
 
     def finishRamp(self, args):
         """ramp finish [stopRamp]: with stopRamp, the read after the current one is the last."""

@@ -24,6 +24,9 @@ class HxExposure(QThread):
     # timeout setting.
     """Placeholder to handle hxActor cmd threading."""
     rampTimingOverhead = 15  # 5 sec has not proven to be long enough.
+    # [read] a read starting this close after the light went off is still taken as lit, which covers the
+    # error on the read start times hx publishes.
+    lightOffGuard = 0.1
 
     def __init__(self, exp, cam):
         """Parameters
@@ -65,6 +68,8 @@ class HxExposure(QThread):
         self.waitForRampCmdReturn = True
 
         self.wipedAt = None
+        self.read0At = None
+        self.lightOffAt = None
         self.lastRead = 0
         self.rampVar = None
         self.readVar = None
@@ -79,7 +84,6 @@ class HxExposure(QThread):
         hxModel = exp.actor.models[self.hx]
         self.readTime = exp.timing.readReadTime(hxModel)
         self.irpRatio = exp.timing.readIrpRatio(hxModel)
-        self.nExtraRead = exp.timing.nExtraRead(self.irpRatio)
         self.finalReadAtCcdRows = exp.timing.finalReadAtCcdRows(self.irpRatio)
         # differentiating between the original number of read (nRead0) and current number of read(nRead).
         self.nRead = self.nRead0 = nRead(exp)
@@ -87,6 +91,9 @@ class HxExposure(QThread):
         # add callback for shutters state, useful to fire process asynchronously.
         self.hxRead = exp.actor.models[self.hx].keyVarDict['hxread']
         self.hxRead.addCallback(self.hxReadCB)
+
+        self.readTimes = exp.actor.models[self.hx].keyVarDict['readTimes']
+        self.readTimes.addCallback(self.readTimesCB, callNow=False)
 
         self.filename = exp.actor.models[self.hx].keyVarDict['filename']
         self.filename.addCallback(self.newFileNameCB)
@@ -166,8 +173,26 @@ class HxExposure(QThread):
             raise exception.HxRampFailed(self.hx,
                                          f'did not reach first read after {self.rampTiming["maxFirstReadDuration"]} seconds')
 
+    def readTimesCB(self, keyVar):
+        """H4 callback giving, at the start of the ramp, when its first read starts."""
+        visit, __, read0Time, __ = keyVar.getValue(doRaise=False)
+
+        # no need to go further.
+        if visit != self.exp.visit:
+            return
+
+        self.read0At = pfsTime.Time.fromisoformat(read0Time).timestamp()
+
+    def firstDarkRead(self):
+        """The first read that starts once the light is off, 0 when either time is unknown."""
+        if self.lightOffAt is None or self.read0At is None:
+            return 0
+
+        readsSinceRead0 = (self.lightOffAt - self.read0At) / self.readTime + self.lightOffGuard
+        return int(np.ceil(readsSinceRead0)) + 1
+
     def hxReadCB(self, keyVar):
-        """H4 read callback, called at the end the read."""
+        """H4 read callback, called once the read is written, a fraction of a read after it ended."""
         visit, nRamp, nGroup, nRead = keyVar.getValue(doRaise=False)
 
         # no need to go further.
@@ -195,15 +220,16 @@ class HxExposure(QThread):
         if self.clearASAP:
             return
 
-        doFinalize = self.doFinalize and nRead < self.nRead  # it is too late otherwise in any-case.
+        doFinalize = self.doFinalize and nRead < self.nRead  # the ramp is over otherwise.
 
         if doFinalize:
-            doStop = nRead < (self.nRead - (1 + self.nExtraRead))
-            # if doStop set nRead to the next one.
-            if doStop:
-                self.nRead = nRead + 1
+            # stopRamp ends the ramp after the read under way, which has to start in the dark: if the light went
+            # off after it started, wait for the next callback.
+            if nRead + 1 < self.firstDarkRead():
+                return
 
-            self._finishRamp(self.exp.cmd, doStop=doStop)
+            self.nRead = nRead + 1
+            self._finishRamp(self.exp.cmd, doStop=True)
             self.doFinalize = False
 
     def newFileNameCB(self, keyVar):
@@ -306,9 +332,10 @@ class HxExposure(QThread):
         self.finalReadDeclared = True
         self.declareFinalRead()
 
-    def declareFinalRead(self, cmd=None):
-        """Declare that the next read will be the final one."""
+    def declareFinalRead(self, cmd=None, lightOffAt=None):
+        """Declare that the next read will be the final one, or the first starting after lightOffAt if later."""
         self.actor.logger.info(f'{self.hx} will be asked to finishRamp when next read is done')
+        self.lightOffAt = lightOffAt
         self.doFinalize = True  # actually the only way to reach the main thread.
 
     @singleShot
@@ -362,5 +389,6 @@ class HxExposure(QThread):
     def exit(self):
         """Overriding QThread.exit(self)."""
         self.hxRead.removeCallback(self.hxReadCB)
+        self.readTimes.removeCallback(self.readTimesCB)
         self.filename.removeCallback(self.newFileNameCB)
         QThread.exit(self)
