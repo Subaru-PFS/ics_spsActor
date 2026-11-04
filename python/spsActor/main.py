@@ -62,6 +62,10 @@ class SpsActor(actorcore.ICC.ICC):
 
     def reloadConfiguration(self, cmd):
         """ when reloading configuration file, reload spsConfig and status callbacks. """
+        # cmd is None while the actor is being constructed, before any connection; see connectionMade.
+        if cmd is None:
+            return
+
         self.genSpsKeys(cmd)
         self.metaStatus.attachCallbacks()
         self.opdb = opdb.OpDB()
