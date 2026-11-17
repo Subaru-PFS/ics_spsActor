@@ -11,6 +11,8 @@ class CcdExposure(QThread):
     wipeTimeLim = 30
     readTimeLim = 90
     clearTimeLim = 10
+    # rows a full-frame read clocks out, which a row binning has to divide.
+    nRows = 4300
     """ Placeholder to handle ccdActor cmd threading """
 
     def __init__(self, exp, cam):
@@ -85,12 +87,17 @@ class CcdExposure(QThread):
         return self.exp.actor.spsConfig[f'sm{self.cam.specNum}']
 
     @staticmethod
-    def defineCCDControl(blueWindow, redWindow):
-        """Update CCD wipe and read flavours based on windowing."""
+    def defineCCDControl(blueWindow, redWindow, rowbin=None):
+        """Update CCD wipe and read flavours based on windowing or row binning."""
         wipeFlavour = dict(b='', r='')
         readFlavour = dict(b='', r='')
 
         for arm, window in zip('br', [blueWindow, redWindow]):
+            if rowbin:
+                wipeFlavour[arm] = 'nrows=0'
+                readFlavour[arm] = f'rowbin={rowbin}'
+                continue
+
             if not window:
                 continue
 
