@@ -302,7 +302,7 @@ class Exposure(object):
     illuminationStatusDelay = 2
 
     def __init__(self, actor, visit, exptype, exptime, cams, metadata=None, doIIS=False, doTest=False, blueWindow=False,
-                 redWindow=False, expTimeOverHead=0, bckIlluminators=None, isLast=False, **kwargs):
+                 redWindow=False, rowbin=None, expTimeOverHead=0, bckIlluminators=None, isLast=False, **kwargs):
         self.actor = actor
         self.visit = visit
         # illuminators lit by somebody else, and whether their run ends with this exposure.
@@ -316,8 +316,9 @@ class Exposure(object):
         self.metadata = metadata
         self.doIIS = doIIS
 
-        # Define how ccds are wiped and read, for windowing purposes.
-        self.wipeFlavour, self.readFlavour = ccdExposure.CcdExposure.defineCCDControl(blueWindow, redWindow)
+        # Define how ccds are wiped and read, for windowing and row binning purposes.
+        self.wipeFlavour, self.readFlavour = ccdExposure.CcdExposure.defineCCDControl(blueWindow, redWindow,
+                                                                                      rowbin=rowbin)
 
         self.syncSpectrograph = self.exposureConfig['doSyncSpectrograph']
         self.expTimeOverHead = max(self.exposureConfig['expTimeOverHead'], expTimeOverHead)

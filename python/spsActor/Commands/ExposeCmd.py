@@ -9,7 +9,7 @@ import spsActor.Commands.cmdList as sync
 import spsActor.utils.driftSlitExposure.exposure as driftSlitExposure
 import spsActor.utils.driftSlitExposure.lampExposure as driftSlitLampExposure
 from ics.utils.threading import singleShot
-from spsActor.utils import exposure, flashExposure, lampsExposure
+from spsActor.utils import ccdExposure, exposure, flashExposure, lampsExposure
 
 reload(exposure)
 reload(sync)
@@ -34,7 +34,7 @@ class ExposeCmd(object):
         expArgs = (f'[<visit>] {spsArgs} [<metadata>] [@doTest] [@doScienceCheck] [@skipBiaCheck] '
                    f'[<bckIlluminators>] [@isLast]')
         lampsArgs = '[@doLamps] [@doShutterTiming]'
-        windowingArgs = '[<window>] [<blueWindow>] [<redWindow>]'
+        windowingArgs = '[<window>] [<blueWindow>] [<redWindow>] [<rowbin>]'
         self.exp = dict()
 
         self.vocab = [
@@ -81,6 +81,8 @@ class ExposeCmd(object):
                                                  help='first row, total number of rows to read on blue arm'),
                                         keys.Key("redWindow", types.Int() * (1, 2),
                                                  help='first row, total number of rows to read on red arm'),
+                                        keys.Key("rowbin", types.Int(),
+                                                 help='number of rows binned together on a full-frame read, br arms'),
                                         keys.Key('slideSlit', types.Float() * (1, 2),
                                                  help='pixels range(start, stop )'),
                                         keys.Key('bckIlluminators', types.String() * (1,),
@@ -220,18 +222,30 @@ class ExposeCmd(object):
 
         blueWindow = cmdKeys['blueWindow'].values if 'blueWindow' in cmdKeys else blueWindow
         redWindow = cmdKeys['redWindow'].values if 'redWindow' in cmdKeys else redWindow
+        rowbin = cmdKeys['rowbin'].values[0] if 'rowbin' in cmdKeys else None
+
+        if rowbin is not None:
+            nRows = ccdExposure.CcdExposure.nRows
+            if blueWindow or redWindow:
+                cmd.fail('text="rowbin and window cannot be combined"')
+                return
+
+            if rowbin < 1 or nRows % rowbin:
+                cmd.fail(f'text="rowbin={rowbin} does not evenly divide the {nRows} ccd rows"')
+                return
 
         nircam = [cam for cam in cams if cam.arm == 'n']
 
-        if len(nircam) and (blueWindow or redWindow):
+        if len(nircam) and (blueWindow or redWindow or rowbin):
             cams = set(cams) - set(nircam)
-            cmd.warn('text="ignoring nir cameras for windowed exposure."')
+            cmd.warn(f'text="ignoring nir cameras for {"binned" if rowbin else "windowed"} exposure."')
 
         self.process(cmd, visit,
                      exptype=exptype, exptime=exptime, cams=cams, doLamps=doLamps, metadata=metadata,
                      doShutterTiming=doShutterTiming, doSlideSlit=doSlideSlit, doIIS=doIIS, doTest=doTest,
                      noShutter=noShutter,
-                     blueWindow=blueWindow, redWindow=redWindow, slideSlitPixelRange=slideSlitPixelRange,
+                     blueWindow=blueWindow, redWindow=redWindow, rowbin=rowbin,
+                     slideSlitPixelRange=slideSlitPixelRange,
                      bckIlluminators=bckIlluminators, isLast=isLast)
 
     @singleShot
