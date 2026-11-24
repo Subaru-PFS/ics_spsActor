@@ -45,6 +45,8 @@ class Sim(object):
     hxStartup : `dict`
         seconds from the ramp command to the reset frame, keyed by spectrograph module; the
         spread between modules is what the extra reads absorb.
+    hxReadLatency : `float`
+        seconds from the end of an H4 read to its hxread, the time hx takes to write it.
     iisGoLatency : `float`
         seconds between the iis go and its lamp lighting up.
     iisWarmup : `float`
@@ -52,7 +54,7 @@ class Sim(object):
     """
 
     def __init__(self, specNums=(1,), lightSource='pfi', site='S', h4ReadTime=0.35, irpRatio=4,
-                 ccdReadTime=0.05, hxStartup=None, iisGoLatency=0, iisWarmup=None):
+                 ccdReadTime=0.05, hxStartup=None, hxReadLatency=0, iisGoLatency=0, iisWarmup=None):
         self.bcast = Cmd('bcast')
         self.logger = logging.getLogger('sim.sps')
         self.models = dict()
@@ -81,7 +83,8 @@ class Sim(object):
             for cam in specModule.cams.values():
                 if cam.arm == 'n':
                     startup = (hxStartup or dict()).get(specNum, 0.05)
-                    self.attach(Hx(self, cam, h4ReadTime, irpRatio, startupTime=startup))
+                    self.attach(Hx(self, cam, h4ReadTime, irpRatio, startupTime=startup,
+                                   readLatency=hxReadLatency))
                 else:
                     self.attach(Ccd(self, cam, readTime=ccdReadTime))
 
